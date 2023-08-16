@@ -1,18 +1,10 @@
 import sys
 from pathlib import Path
-import rich
-import re
-from dataclasses import dataclass, field
-import tempfile
-from elib.libcxx.types import LibcxxInfo
-import subprocess
-import networkx as nx
-import matplotlib.pyplot as plt
-from collections import defaultdict
-from multiprocessing import Pool, JoinableQueue
-import rich
-from elib.libcxx.job import *
-from elib.libcxx.types import *
+from libcxx.config import LIBCXX_VERSIONS_ROOT
+
+from libcxx.job import *
+from libcxx.types import *
+from libcxx.jobs import *
 import tempfile
 import json
 import tqdm
@@ -64,8 +56,6 @@ def prepop_single(cls):
 
 import matplotlib.pyplot as plt
 
-def plot_flask(cls, std, field, label):
-  pass
 
 def plot_data(cls, std, getter, label='Symbol', additional_id=None):
   versions = list(LIBCXX_VERSIONS)
@@ -100,9 +90,9 @@ def plot_data(cls, std, getter, label='Symbol', additional_id=None):
 
 if __name__ == '__main__':
   if True:
-    prepop(ClangQueryJob)
+    prepop(StdSymbolsJob)
     for s in tqdm.tqdm(STD_DIALECTS, position=1):
-      plot_data(ClangQueryJob, s, lambda x: x.symbol_count, 'Symbol')
+      plot_data(StdSymbolsJob, s, lambda x: x.symbol_count, 'Symbol')
   if True:
     prepop(IncludeSizeJob)
     for s in tqdm.tqdm(STD_DIALECTS, position=1):
@@ -110,8 +100,8 @@ if __name__ == '__main__':
 
   if True:
     for s in STD_DIALECTS:
-      plot_data(StatCompileJob, s, lambda x: x.recompute_average().peak_memory_usage.kilobytes, 'Kilobytes', additional_id='peak-memory')
-      plot_data(StatCompileJob, s, lambda x: x.recompute_average().total_execution_time.microseconds, 'Microseconds', additional_id='total-time')
-      plot_data(StatCompileJob, s, lambda x: x.recompute_average().user_execution_time.microseconds, 'Microseconds', additional_id='usr-time')
+      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().peak_memory_usage.kilobytes, 'Kilobytes', additional_id='peak-memory')
+      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().total_execution_time.microseconds, 'Microseconds', additional_id='total-time')
+      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().user_execution_time.microseconds, 'Microseconds', additional_id='usr-time')
 
 

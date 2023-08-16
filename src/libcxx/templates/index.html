@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Line Plots</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        #fixed-ratio-wrapper {
+            display: flex;
+            height: 0;
+            padding-bottom: 50%;
+        }
+        #linePlot {
+            flex-grow: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="fixed-ratio-wrapper">
+        <div id="linePlot" class="js-plotly-plot plotly-graph-div"></div>
+    </div>
+    <script type="text/javascript">
+        var config = {responsive: true};
+        var container = document.getElementById('linePlot');
+        var width = container.offsetWidth;
+        var height = width / 2;
+        var layout = {
+            title: "{{ title | safe }}",
+            autosize: false,
+            width: width,
+            height: height,
+            xaxis: {
+                dtick: 0.5,
+                title: "Version"
+            },
+            yaxis: {
+                automargin: true,
+                title: "{{ ylabel | safe }}"
+            },
+            hovermode: "closest"
+        };
+        var data = {{ graphJSON | safe }};
+        Plotly.newPlot('linePlot', data, layout, config);
+        window.addEventListener('resize', () => {
+            var width = container.offsetWidth;
+            var height = width / 2;
+            var update = {
+                width: width,
+                height: height,
+            };
+            Plotly.relayout('linePlot', update);
+        });
+    </script>
+</body>
+</html>

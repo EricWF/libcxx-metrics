@@ -1,5 +1,5 @@
-from elib.libcxx.job import *
-from elib.libcxx.types import *
+from libcxx.job import *
+from libcxx.types import *
 import subprocess
 import shutil
 
@@ -29,5 +29,5 @@ class IncludeSizeJob(LibcxxJob):
       return True
     lines = [l.strip() for l in out.splitlines() if want_line(l)]
 
-    return self.key, IncludeSizeJob.Output(line_count=len(lines), size_in_bytes=len(out))
+    return IncludeSizeJob.Output(line_count=len(lines), size_in_bytes=len(out))
 

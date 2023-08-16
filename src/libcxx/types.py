@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from pydantic import BaseModel, Field, RootModel
 from typing import Union, Optional, Any, Annotated, Literal
+from libcxx.config import LIBCXX_VERSIONS_ROOT
 import subprocess
 import shutil
 import copy
@@ -195,7 +196,7 @@ class LibcxxVersion(str, Enum):
     vlist = [v for v in LibcxxVersion]
     return vlist[:vlist.index(v1)]
 
-  def load(self, root='/opt/libcxx-versions'):
+  def load(self, root=LIBCXX_VERSIONS_ROOT):
     root = Path(root).absolute()
     key = None
     if self.value == 'trunk':

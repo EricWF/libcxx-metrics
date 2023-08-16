@@ -1,5 +1,5 @@
-from elib.libcxx.types import *
-from elib.libcxx.job import *
+from libcxx.types import *
+from libcxx.job import *
 import subprocess
 import shutil
 

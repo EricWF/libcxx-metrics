@@ -5,11 +5,31 @@ from pathlib import Path
 import sys
 import os
 from libcxx.loader import *
-
-
+import pydantic
+from dataclasses import dataclass
+from typing import Any
+from threading import RLock
 DATABASE = pw.SqliteDatabase(None)
 DATABASE_PATH = Path(os.path.expanduser('~/.database/libcxx-info.db'))
 DATABASE_TEST_PATH = Path(os.path.expanduser('~/.database/test/libcxx-info.db'))
+
+@dataclass
+class ClassRegistry:
+  mapping : dict[str, Any]
+  _lock : RLock()
+
+  def registered(self, obj_type):
+    with self._lock:
+      name = obj_type.__name__
+      assert name not in self.mapping
+      self.mapping[name] = obj_type
+    return obj_type
+
+  def __getitem__(self, key):
+    with self._lock:
+      if obj := self.mapping.get(key, None):
+        return obj
+      raise KeyError("Key %s not present" % key)
 
 
 class PydanticWrapper(pydantic.BaseModel):

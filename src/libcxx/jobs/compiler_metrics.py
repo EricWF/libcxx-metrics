@@ -1,6 +1,6 @@
 from pydantic import BaseModel
-from elib.libcxx.types import *
-from elib.libcxx.job import *
+from libcxx.types import *
+from libcxx.job import *
 import shutil
 import subprocess
 
@@ -76,7 +76,7 @@ class CompilerMetricsJob(LibcxxJob):
 
     runs = CompilerMetricsJob.Output()
 
-    RUNS = 10
+    RUNS = 25
     for i in range(0, RUNS):
       out = subprocess.check_output(cmd).decode('utf-8').strip()
       csv = [p.strip() for p in output_file.read_text().strip().splitlines()[0].split(',') if p.strip()]
@@ -94,5 +94,5 @@ class CompilerMetricsJob(LibcxxJob):
           }
       })
       runs.append(tmp_out)
-    return self.key, runs
+    return runs
 

@@ -1,5 +1,5 @@
-from elib.libcxx.job import *
-from elib.libcxx.types import *
+from libcxx.job import *
+from libcxx.types import *
 import subprocess
 import re
 import shutil
@@ -40,5 +40,5 @@ class StdSymbolsJob(LibcxxJob):
     out = subprocess.check_output(query_cmd).decode('utf-8').strip()
     last_line_re = re.compile('(?P<COUNT>\d+) matches.')
     m = last_line_re.match(out.splitlines()[-1])
-    return self.key, StdSymbolsJob.Output(symbol_count=int(m.group('COUNT')))
+    return StdSymbolsJob.Output(symbol_count=int(m.group('COUNT')))
 

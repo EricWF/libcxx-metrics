@@ -1,6 +1,6 @@
-from elib.libcxx.types import *
+from libcxx.types import *
 from pydantic import BaseModel, Field, model_validator
-
+import multiprocessing
 from pathlib import Path
 import rich
 import sys
@@ -8,12 +8,12 @@ import os
 import tempfile
 from dataclasses import dataclass
 import json
-from elib.ethread import syncronized
 from typing import Callable
-from  dataclasses import dataclass, field
+from dataclasses import dataclass, field
 from threading import RLock
 from pydantic import ConfigDict
-from elib.libcxx.db import DBDataPoint, init_db
+from libcxx.db import DBDataPoint, init_db, DATABASE
+import tqdm
 
 def _new_tmp_path():
   import tempfile
@@ -68,6 +68,10 @@ class JobKey(BaseModel):
     return '/'.join(self.key())
 
 init_db()
+
+class LibcxxJobResult(BaseModel):
+  job: Any
+  result: Any
 
 class LibcxxJob(BaseModel):
   root_path : Optional[Path] = None
@@ -153,31 +157,72 @@ class LibcxxJob(BaseModel):
     key = cls.create_key(**kwargs)
     return cls.model_validate({'key': key, 'libcxx': key.libcxx.load()})
 
+  def run_internal(self):
+    raise NotImplementedError()
 
-  @classmethod
-  def datapoint(cls, key):
-    obj = DBDataPoint.get_or_none(key=key, job=cls.job_name())
+  def db_get(self):
+    obj = DBDataPoint.get_or_none(key=self.key, job=self.job_name())
     if obj:
       if isinstance(obj, tuple):
         assert False
       return obj.value
+    return None
 
-    runner = cls.model_validate({'key': key, 'libcxx': key.libcxx.load()})
-    res = runner.run()
-    if res  is None:
+  def db_store(self, result):
+    assert not isinstance(result, tuple)
+    assert isinstance(result, self.output_type())
+    obj, created = DBDataPoint.get_or_create(key=self.key, job=self.job_name(), value=result)
+    if not created:
+      obj.value = result
+      obj.save()
+    return obj
+
+  @classmethod
+  def db_clear(cls):
+    with DATABASE.atomic():
+      query = DBDataPoint.delete().where(DBDataPoint.job == cls.job_name())
+      query.execute()
+
+  def __call__(self,  cache=True):
+    if cache:
+      if obj := self.db_get():
+        return obj
+    res = self.run()
+    if res is None:
       raise RuntimeError('Result should not be none')
-    assert isinstance
-    if isinstance(res, tuple):
-      k, v = res
-      res = v
-    new_created = DBDataPoint.create(key=key, job=cls.job_name(), value=res)
+    if cache:
+      self.db_store(res)
     return res
 
-  @classmethod
-  def store_datapoint(cls, k, v):
-    obj, created = DBDataPoint.get_or_create(job=cls.job_name(), key=k, value=v)
 
-  @classmethod
-  def datapoint_kv(cls, **kwargs):
-    key = cls.key_type().model_validate(kwargs)
-    return cls.datapoint(key)
+
+
+def create_jobs(cls, *, headers, standards, versions):
+    jobs = []
+    for item in itertools.product(headers, standards, versions):
+        jobs += [cls.create_job(header=item[0], standard=item[1], libcxx=item[2])]
+    return jobs
+
+def run_return_job(job):
+  res = job.run()
+  return job, res
+
+def prepopulate_jobs_by_running_threaded(jobs):
+  if len(jobs) == 0:
+    return
+  jobs = [j for j in jobs if j.db_get() is None]
+  with multiprocessing.Pool() as pool:
+    for job,res in tqdm.tqdm(pool.imap_unordered(run_return_job, jobs), total=len(jobs)):
+      if res is None:
+        raise RuntimeError("IDK")
+      job.db_store(res)
+
+def prepopulate_jobs_by_running_singlethread(jobs):
+  if len(jobs) == 0:
+    return
+  jobs = [j for j in jobs if j.db_get() is None]
+  for job in tqdm.tqdm(jobs):
+      res = job.run()
+      if res is None:
+        raise RuntimeError("IDK")
+      job.db_store(res)

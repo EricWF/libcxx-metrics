@@ -12,7 +12,8 @@ LIBCXX_VERSIONS = LibcxxVersion.between(LibcxxVersion.v7, LibcxxVersion.trunk)
 STD_DIALECTS = Standard.between(Standard.Cpp14, Standard.Cpp23)
 HEADERS = STLHeader.small_core_header_sample()
 
-file_loader = FileSystemLoader('templates')
+TEMPLATE_DIR = Path(__file__).absolute().parent / 'templates'
+file_loader = FileSystemLoader(TEMPLATE_DIR)
 jinja_env = Environment(loader=file_loader)
 
 def prepopulate():
@@ -35,7 +36,7 @@ def generate_graph(cls, std, getter, ylabel, title):
   data = {
       'version': [v.value for v in versions]
   }
-  dp = lambda **kwargs: getter(cls.datapoint_kv(**kwargs))
+  dp = lambda **kwargs: getter(cls.create_job(**kwargs).db_get(allow_missing=False))
 
   for h in headers:
     data[h.value] = list(
@@ -101,13 +102,18 @@ def produce_graphs():
       includes_page: 'include',
       symbols_page: 'symbols'
   }
-  for fn, route in tqdm.tqdm(items.items(), position=1):
-    for s in tqdm.tqdm(STD_DIALECTS, position=0):
-      std_val = s.value.replace('c++', '')
-      page = fn(std_val)
-      p = Path(f'/tmp/pages/{route}')
-      p.mkdir(exist_ok=True, parents=False)
-      (p / f'{std_val}.html').write_text(page)
+  with tqdm.tqdm(items.items(), position=1) as pbar:
+    for fn, route in pbar:
+      pbar.set_postfix_str(route)
+      with tqdm.tqdm(STD_DIALECTS, position=0) as pbar2:
+        for s in pbar2:
+          pbar2.set_postfix_str(s.value)
+          std_val = s.value.replace('c++', '')
+          page = fn(std_val)
+          p = Path(f'/tmp/pages/{route}')
+          p.mkdir(exist_ok=True, parents=False)
+          (p / f'{std_val}.html').write_text(page)
 
 if __name__ == '__main__':
+  produce_graphs()
   prepopulate()

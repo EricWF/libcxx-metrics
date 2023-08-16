@@ -160,12 +160,14 @@ class LibcxxJob(BaseModel):
   def run_internal(self):
     raise NotImplementedError()
 
-  def db_get(self):
+  def db_get(self, allow_missing=True):
     obj = DBDataPoint.get_or_none(key=self.key, job=self.job_name())
     if obj:
       if isinstance(obj, tuple):
         assert False
       return obj.value
+    if not allow_missing:
+      raise RuntimeError("Cache entry missing for %s" % self.key)
     return None
 
   def db_store(self, result):

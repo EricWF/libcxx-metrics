@@ -1,0 +1,28 @@
+{
+  "name": "11.0.1",
+  "identifier": {
+    "kind": "version",
+    "major": 11,
+    "minor": 0,
+    "patchlevel": 1
+  },
+  "path": "/opt/compiler-explorer/clang-11.0.1",
+  "include_paths": [
+    "include/c++/v1"
+  ],
+  "library_paths": [
+    "lib"
+  ],
+  "libraries": [
+    "lib/libc++abi.so.1",
+    "lib/libc++.so.1.0",
+    "lib/libc++.so.1",
+    "lib/libc++.a",
+    "lib/libc++abi.so.1.0",
+    "lib/libc++experimental.a",
+    "lib/libc++abi.a",
+    "lib/libc++.so",
+    "lib/libc++abi.so"
+  ],
+  "supported_dialects": null
+}

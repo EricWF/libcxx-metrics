@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+echo Using $(lcv get)
+CXX=${CXX:-clang++}
+SCRIPT_PATH="$(readlink -f $0)"
+if [[ $CXX == $SCRIPT_PATH ]]; then
+  CXX=clang++
+fi
+$CXX $ECLANG_CXXFLAGS $ECLANG_LDFLAGS "$@"

@@ -1,0 +1,11 @@
+Metadata-Version: 2.1
+Name: libcxx
+Version: 0.1
+Summary: A set of tools for capturing libc++ metrics over time
+Home-page: efcs.ca/this-is-not-a-website
+Author: Eric Fiselier
+Author-email: ericwf@google.com
+Description-Content-Type: text/markdown
+License-File: LICENSE.TXT
+
+A set of tools for capturing libc++ metrics over time

@@ -1,0 +1,28 @@
+{
+  "name": "7.1.0",
+  "identifier": {
+    "kind": "version",
+    "major": 7,
+    "minor": 1,
+    "patchlevel": 0
+  },
+  "path": "/opt/compiler-explorer/clang-7.1.0",
+  "include_paths": [
+    "include/c++/v1"
+  ],
+  "library_paths": [
+    "lib"
+  ],
+  "libraries": [
+    "lib/libc++abi.so.1",
+    "lib/libc++.so.1.0",
+    "lib/libc++.so.1",
+    "lib/libc++.a",
+    "lib/libc++abi.so.1.0",
+    "lib/libc++experimental.a",
+    "lib/libc++abi.a",
+    "lib/libc++.so",
+    "lib/libc++abi.so"
+  ],
+  "supported_dialects": null
+}

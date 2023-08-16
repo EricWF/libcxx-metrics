@@ -1,0 +1,14 @@
+{
+  "name": "3.3.0",
+  "identifier": {
+    "kind": "version",
+    "major": 3,
+    "minor": 3,
+    "patchlevel": 0
+  },
+  "path": "/opt/compiler-explorer/clang-3.3",
+  "include_paths": [],
+  "library_paths": [],
+  "libraries": [],
+  "supported_dialects": null
+}

@@ -1,0 +1,26 @@
+{
+  "name": "3.9.1",
+  "identifier": {
+    "kind": "version",
+    "major": 3,
+    "minor": 9,
+    "patchlevel": 1
+  },
+  "path": "/opt/compiler-explorer/clang-3.9.1",
+  "include_paths": [
+    "include/c++/v1"
+  ],
+  "library_paths": [
+    "lib"
+  ],
+  "libraries": [
+    "lib/libc++abi.so.1",
+    "lib/libc++.so.1.0",
+    "lib/libc++.so.1",
+    "lib/libc++abi.so.1.0",
+    "lib/libc++abi.a",
+    "lib/libc++.so",
+    "lib/libc++abi.so"
+  ],
+  "supported_dialects": null
+}

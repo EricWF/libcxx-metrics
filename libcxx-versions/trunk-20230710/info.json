@@ -1,0 +1,29 @@
+{
+  "name": "trunk-20230710",
+  "identifier": {
+    "kind": "datestamp",
+    "year": 2023,
+    "month": 7,
+    "day": 10
+  },
+  "path": "/opt/compiler-explorer/clang-trunk-20230710",
+  "include_paths": [
+    "include/c++/v1",
+    "include/x86_64-unknown-linux-gnu/c++/v1"
+  ],
+  "library_paths": [
+    "lib/x86_64-unknown-linux-gnu"
+  ],
+  "libraries": [
+    "lib/x86_64-unknown-linux-gnu/libc++.so.1",
+    "lib/x86_64-unknown-linux-gnu/libc++.a",
+    "lib/x86_64-unknown-linux-gnu/libc++abi.so.1.0",
+    "lib/x86_64-unknown-linux-gnu/libc++experimental.a",
+    "lib/x86_64-unknown-linux-gnu/libc++abi.a",
+    "lib/x86_64-unknown-linux-gnu/libc++.so",
+    "lib/x86_64-unknown-linux-gnu/libc++abi.so",
+    "lib/x86_64-unknown-linux-gnu/libc++abi.so.1",
+    "lib/x86_64-unknown-linux-gnu/libc++.so.1.0"
+  ],
+  "supported_dialects": null
+}

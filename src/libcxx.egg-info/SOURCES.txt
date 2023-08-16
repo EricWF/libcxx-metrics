@@ -1,0 +1,6 @@
+LICENSE.TXT
+setup.py
+src/libcxx.egg-info/PKG-INFO
+src/libcxx.egg-info/SOURCES.txt
+src/libcxx.egg-info/dependency_links.txt
+src/libcxx.egg-info/top_level.txt

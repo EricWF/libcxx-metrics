@@ -1,107 +1,119 @@
-import sys
-from pathlib import Path
-from libcxx.config import LIBCXX_VERSIONS_ROOT
+import importlib
 
-from libcxx.job import *
-from libcxx.types import *
-from libcxx.jobs import *
-import tempfile
-import json
-import tqdm
-import seaborn as sns
+import plotly
+import plotly.graph_objs as go
 import pandas as pd
-LIBCXX_HEADER_ROOT = Path(os.path.expanduser('~/llvm-project/build/libcxx/include/c++/v1/'))
-HEADERS = [p for p in LIBCXX_HEADER_ROOT.rglob('*') if p.is_file()]
+import tqdm
+from libcxx.job import *
+from libcxx.jobs import *
+from jinja2 import Environment, FileSystemLoader
 
-LV = LibcxxVersion
-LIBCXX_VERSIONS = LibcxxVersion.between(LV.v6, LV.trunk)
+LIBCXX_VERSIONS = LibcxxVersion.between(LibcxxVersion.v7, LibcxxVersion.trunk)
 STD_DIALECTS = Standard.between(Standard.Cpp14, Standard.Cpp23)
 HEADERS = STLHeader.small_core_header_sample()
 
+TEMPLATE_DIR = Path(__file__).absolute().parent / 'templates'
+file_loader = FileSystemLoader(TEMPLATE_DIR)
+jinja_env = Environment(loader=file_loader)
 
+def prepopulate():
+  mp_jobs = create_jobs(StdSymbolsJob, versions=LIBCXX_VERSIONS,
+                        standards=STD_DIALECTS, headers=HEADERS)
+  mp_jobs += create_jobs(IncludeSizeJob, versions=LIBCXX_VERSIONS,
+                         standards=STD_DIALECTS, headers=HEADERS)
+  prepopulate_jobs_by_running_threaded(mp_jobs)
+  st_jobs = create_jobs(CompilerMetricsJob, versions=LIBCXX_VERSIONS,
+                        standards=STD_DIALECTS, headers=HEADERS)
+  prepopulate_jobs_by_running_threaded(st_jobs)
 
-import itertools
+  #prepopulate_jobs_by_running_singlethread(st_jobs)
 
-def populate_job(job):
-  if obj := DBDataPoint.get_or_none(key=job.key):
-    return None
-  return job.run()
-
-def create_jobs(cls):
-  jobs = []
-  for item in itertools.product(HEADERS, STD_DIALECTS, LIBCXX_VERSIONS):
-    jobs += [cls.create_job(header=item[0], standard=item[1], libcxx=item[2])]
-  print('Have %d keys' % len(jobs))
-  return jobs
-
-def prepop(cls):
-  import multiprocessing
-  with multiprocessing.Pool() as pool:
-    jobs = create_jobs(cls)
-    for res  in tqdm.tqdm(pool.imap(populate_job, jobs), total=len(jobs)):
-      if res is None:
-        continue
-      k, v = res
-      cls.store_datapoint(k, v)
-
-
-def prepop_single(cls):
-  jobs = create_jobs(cls)
-  for j in tqdm.tqdm(jobs):
-    res = populate_job(j)
-    if res is None:
-      continue
-    k, v = res
-    cls.store_datapoint(k, v)
-
-import matplotlib.pyplot as plt
-
-
-def plot_data(cls, std, getter, label='Symbol', additional_id=None):
+def generate_graph(cls, std, getter, ylabel, title):
   versions = list(LIBCXX_VERSIONS)
   versions.sort()
   headers = list(HEADERS)
 
-  plt.figure(figsize=(10, 5))
+  data = {
+      'version': [v.value for v in versions]
+  }
+  dp = lambda **kwargs: getter(cls.create_job(**kwargs).db_get(allow_missing=False))
+
+  for h in headers:
+    data[h.value] = list(
+        [dp(libcxx=v, standard=std, header=h) for v in versions])
+
+  # Convert data to DataFrame
+  df = pd.DataFrame(data)
+  traces = []
+  for h in headers:
+    # Create a trace
+    traces += [go.Scatter(
+        x=df['version'],
+        y=df[h.value],
+        mode='lines+markers',
+        name=h.value
+    )]
+
+  graphJSON = json.dumps(traces, cls=plotly.utils.PlotlyJSONEncoder)
+  template = jinja_env.get_template('index.html')
+  return template.render(title=title + f': {std.value}', ylabel=ylabel,
+                         graphJSON=graphJSON)
 
 
-  plt.title(f'STL {label} in C++ {std.value}')
-  plt.xlabel('Version')
-  plt.ylabel(f'{label} Count')
-
-  dp = lambda **kwargs: getter(cls.datapoint_kv(**kwargs))
-
-
-  for h in tqdm.tqdm(headers, position=0):
-    plt.plot([v.value for v in versions], list([dp(libcxx=v, standard=std, header=h) for v in versions]), marker='o', label=h.value)
-
-  plt.grid(True)
-
-  plt.legend()
-  if additional_id is None:
-    astr = ''
-  else:
-    astr = f'-{additional_id}-'
-  plt.legend(bbox_to_anchor=(1.02, 1.1), loc='upper left', borderaxespad=0)
-  plt.savefig(os.path.expanduser(f'~/libcxx-graphs/{cls.__name__}-{astr}c++{std.value}.png'))
-  plt.clf()
+def symbols_page(std=17):
+  obj = generate_graph(StdSymbolsJob, Standard.convert(std),
+                       lambda x: x.symbol_count, ylabel='# Symbols',
+                       title='Visible Symbols')
+  return obj
 
 
+def includes_page(std=17):
+  if std == 17:
+    s = Standard.Cpp17
+  return generate_graph(IncludeSizeJob, Standard.convert(std),
+                        lambda x: x.line_count, ylabel='LOC',
+                        title='Preprocessed LOC')
+
+
+def memory_page(std=17):
+  return generate_graph(CompilerMetricsJob, Standard.convert(std), lambda
+      x: x.recompute_average().peak_memory_usage.kilobytes, ylabel='Kilobytes',
+                        title='Peak Memory Usage')
+
+
+def total_time_page(std=17):
+  return generate_graph(CompilerMetricsJob, Standard.convert(std), lambda
+      x: x.recompute_average().total_execution_time.milliseconds,
+                        ylabel='milliseconds', title='Total Time')
+
+
+def usr_time_page(std=17):
+  return generate_graph(CompilerMetricsJob, Standard.convert(std), lambda
+      x: x.recompute_average().user_execution_time.milliseconds,
+                        ylabel='milliseconds', title='User Time')
+
+
+
+def produce_graphs():
+  items = {
+      usr_time_page: 'usr-time',
+      total_time_page: 'time',
+      memory_page: 'memory',
+      includes_page: 'include',
+      symbols_page: 'symbols'
+  }
+  with tqdm.tqdm(items.items(), position=1) as pbar:
+    for fn, route in pbar:
+      pbar.set_postfix_str(route)
+      with tqdm.tqdm(STD_DIALECTS, position=0) as pbar2:
+        for s in pbar2:
+          pbar2.set_postfix_str(s.value)
+          std_val = s.value.replace('c++', '')
+          page = fn(std_val)
+          p = Path(f'/tmp/pages/{route}')
+          p.mkdir(exist_ok=True, parents=False)
+          (p / f'{std_val}.html').write_text(page)
 
 if __name__ == '__main__':
-  if True:
-    prepop(StdSymbolsJob)
-    for s in tqdm.tqdm(STD_DIALECTS, position=1):
-      plot_data(StdSymbolsJob, s, lambda x: x.symbol_count, 'Symbol')
-  if True:
-    prepop(IncludeSizeJob)
-    for s in tqdm.tqdm(STD_DIALECTS, position=1):
-      plot_data(IncludeSizeJob, s, lambda x: x.line_count, 'LOC')
-
-  if True:
-    for s in STD_DIALECTS:
-      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().peak_memory_usage.kilobytes, 'Kilobytes', additional_id='peak-memory')
-      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().total_execution_time.microseconds, 'Microseconds', additional_id='total-time')
-      plot_data(CompilerMetricsJob, s, lambda x: x.recompute_average().user_execution_time.microseconds, 'Microseconds', additional_id='usr-time')
-
-
+  produce_graphs()
+  prepopulate()

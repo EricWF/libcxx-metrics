@@ -1,24 +1,45 @@
 from libcxx.types import *
+from libcxx.db import registry
 from libcxx.job import *
 import subprocess
 import shutil
 
+@registry.registered
 class BinarySizeJob(LibcxxJob):
+  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
-    header: STLHeader
+    input: TestInputs
+    debug: DebugOpts
+    optimize: OptimizerOpts
 
+  @registry.registered
   class Output(BaseModel):
-    size: int
-    debug_size: int
+    bytes: int
+
+
 
   def run(self):
-    input_file = self.tmp_file('input.cpp',
-                               '#include <%s>\nint main() {\n}\n' % self.key.header.value)
+    input_file = self.key.input.path()
+    output_file = self.tmp_file('test.o')
+    flags = [self.key.debug.value, self.key.optimize.value]
+    cmd = [shutil.which('clang++'), '-c',  self.key.standard.flag()] \
+      + self.libcxx.include_flags() + flags  \
+      + ['-I', str(LIBCXX_INPUTS_ROOT / 'include')] \
+      + ['-o', str(output_file), '-xc++', str(input_file)]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out,err = proc.communicate()
+    assert proc.poll() is not None
+    if proc.returncode != 0:
+      rich.print(f'Compilation failed for {input_file}.name with code {proc.returncode} for invocation:\n  {" ".join(cmd)}')
+      rich.print(out.decode('utf-8'))
+      return None
+
+    stat = os.stat(output_file)
+    return BinarySizeJob.Output(bytes=stat.st_size)
 
 
-    cmd = [shutil.which('clang++'),  self.key.standard.flag(), '-E'] + self.libcxx.include_flags() + ['-xc++', str(input_file)]
-    out = subprocess.check_output(cmd).decode('utf-8').strip()
-    lines = [l.strip() for l in out.splitlines() if l.strip().startswith('#')]
-    return self.key, BinarySizeJob.Output(line_count=len(lines))
+if __name__ == '__main__':
+
+  prepopulate_jobs_by_running_threaded(list(BinarySizeJob.jobs()))

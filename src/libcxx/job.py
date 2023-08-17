@@ -14,6 +14,8 @@ from threading import RLock
 from pydantic import ConfigDict
 from libcxx.db import DBDataPoint, init_db, DATABASE
 import tqdm
+from itertools import product, starmap
+from collections import namedtuple
 
 def _new_tmp_path():
   import tempfile
@@ -35,7 +37,18 @@ def Default(x):
 
   return Field(default_factory=lambda: copy.copy(x))
 
+class PlotKey(BaseModel):
+  name : str
+  key_parts: dict[str, Any] = Field(default_factory=dict)
 
+  @staticmethod
+  def create(**kwargs):
+    def as_key(obj):
+      if hasattr(obj, 'pathkey'):
+        return obj.pathkey()
+      else:
+        return obj
+    return PlotKey.model_validate({'name': '/'.join([as_key(o) for k,o in kwargs.items()]), 'key_parts': dict(kwargs)})
 
 
 class JobKey(BaseModel):
@@ -56,6 +69,7 @@ class JobKey(BaseModel):
       parts += [getattr(self, f)]
     return tuple(parts)
 
+
   def __hash__(self):
     return hash(self.key())
 
@@ -65,7 +79,14 @@ class JobKey(BaseModel):
     return self.key() == other.key()
 
   def pathkey(self):
-    return '/'.join(self.key())
+    def as_key(obj):
+      if hasattr(obj, 'pathkey'):
+        return obj.pathkey()
+      else:
+        return obj
+    return '/'.join([as_key(o) for o in self.key()])
+
+
 
 init_db()
 
@@ -80,6 +101,37 @@ class LibcxxJob(BaseModel):
   libcxx: Optional[LibcxxInfo]
 
   @classmethod
+  def job_inputs(cls):
+    possible = {
+          'standard': Standard.between(Standard.Cpp11, Standard.Cpp23),
+          'libcxx': LibcxxVersion.after(LibcxxVersion.v6),
+          'input': [TestInputs.vector, TestInputs.shared_ptr],
+          'header': STLHeader.small_core_header_sample(),
+          'debug': [DebugOpts.OFF, DebugOpts.ON],
+          'optimize': [OptimizerOpts.O0, OptimizerOpts.O2]
+        }
+    kf = set(cls.key_type().key_fields())
+    return {k: v for k,v in possible.items() if k in kf}
+
+  @classmethod
+  def jobs(cls):
+    obj = cross_product(**cls.job_inputs())
+    j = []
+    for k in obj:
+      j += [cls.create_job(**k)]
+    return j
+
+  @classmethod
+  def plotkey_inputs(cls):
+    return {k: v for k,v in cls.job_inputs().items() if k not in ['libcxx', 'std', 'standard']}
+
+  @classmethod
+  def plotkeys(cls):
+    return [PlotKey.create(**pk) for pk in cross_product(**cls.plotkey_inputs())]
+
+
+
+  @classmethod
   def from_key(cls, key):
     return cls.model_validate({
         'key': key,
@@ -89,7 +141,7 @@ class LibcxxJob(BaseModel):
   @model_validator(mode='after')
   def validate_paths(self):
     if self.root_path is None:
-      self.root_path = Path(f'/tmp/libcxx-jobs', *self.key.key())
+      self.root_path = Path(f'/tmp/libcxx-jobs', self.key.pathkey())
       self.root_path.mkdir(exist_ok=True, parents=True)
     if not self.root_path.is_dir():
         raise RuntimeError('No such directory: %s' % self.root_path)
@@ -132,12 +184,13 @@ class LibcxxJob(BaseModel):
     if contents is not None:
       p.write_text(contents)
     return p
+
+
   @classmethod
   def job_name(cls):
     n = cls.__qualname__
     n = n.replace('__main__.', '')
     return n
-
 
   @classmethod
   def key_type(cls):
@@ -196,25 +249,39 @@ class LibcxxJob(BaseModel):
       self.db_store(res)
     return res
 
+def named_product(**items):
+    names = items.keys()
+    vals = items.values()
+    for res in itertools.product(*vals):
+        yield dict(zip(names, res))
+
+def cross_product(**job_inputs):
+   return named_product(**job_inputs)
 
 
-
-def create_jobs(cls, *, headers, standards, versions):
-    jobs = []
-    for item in itertools.product(headers, standards, versions):
-        jobs += [cls.create_job(header=item[0], standard=item[1], libcxx=item[2])]
+def create_jobs(cls, *, job_inputs):
+    jobs = [cls.create_job(**fields) for fields in cross_product(**job_inputs)]
     return jobs
+
+def jobs_to_plotkeys(jobs):
+  res = set()
+  for j in jobs:
+    res.add(j.key.plotkey())
+  return res
 
 def run_return_job(job):
   res = job.run()
   return job, res
 
 def prepopulate_jobs_by_running_threaded(jobs):
+  jobs = list(jobs)
+  print('Have %d jobs' % len(jobs))
+  jobs = list([j for j in jobs if j.db_get() is None])
   if len(jobs) == 0:
     return
-  jobs = [j for j in jobs if j.db_get() is None]
+
   with multiprocessing.Pool() as pool:
-    for job,res in tqdm.tqdm(pool.imap_unordered(run_return_job, jobs), total=len(jobs)):
+    for job,res in tqdm.tqdm(pool.imap_unordered(run_return_job, jobs), total=len(list(jobs))):
       if res is None:
         raise RuntimeError("IDK")
       job.db_store(res)
@@ -223,7 +290,7 @@ def prepopulate_jobs_by_running_singlethread(jobs):
   if len(jobs) == 0:
     return
   jobs = [j for j in jobs if j.db_get() is None]
-  for job in tqdm.tqdm(jobs):
+  for job in jobs:
       res = job.run()
       if res is None:
         raise RuntimeError("IDK")

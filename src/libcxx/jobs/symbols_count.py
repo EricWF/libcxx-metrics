@@ -3,6 +3,7 @@ from libcxx.types import *
 import subprocess
 import re
 import shutil
+from libcxx.db import registry
 
 QUERY_STR = \
   '''
@@ -12,11 +13,13 @@ QUERY_STR = \
   '''.strip() + '\n'
 
 class StdSymbolsJob(LibcxxJob):
+  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
+  @registry.registered
   class Output(BaseModel):
     symbol_count: int
 

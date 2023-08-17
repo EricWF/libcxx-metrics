@@ -3,7 +3,7 @@ from libcxx.types import *
 from libcxx.job import *
 import shutil
 import subprocess
-
+from libcxx.db import registry
 class CompilerMetrics(BaseModel):
   filename: str
   output_filename: str
@@ -54,29 +54,34 @@ class CompilerMetricsList(RootModel):
     })
 
 
-
+@registry.registered
 class CompilerMetricsJob(LibcxxJob):
+  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
+  @registry.registered
   class Output(CompilerMetricsList):
     pass
 
   def run(self):
     input_file = self.tmp_file('input.cpp',
                                '#include <%s>\nint main() {\n}\n' % self.key.header.value)
+    return self.compile_and_output(input_file)
 
+  def compile_and_output(self, input_file):
     output_file = self.output_file('usage.txt')
     cmd = [shutil.which('clang++'), '-o', '/dev/null', '-c'] + \
           [self.key.standard.flag()] + self.libcxx.include_flags() + \
+          ['-I', LIBCXX_INPUTS_ROOT / 'include'] + \
           [f'-fproc-stat-report={output_file}'] + \
           ['-xc++', str(input_file)]
 
-    runs = CompilerMetricsJob.Output()
+    runs = self.output_type()()
 
-    RUNS = 25
+    RUNS = 250
     for i in range(0, RUNS):
       out = subprocess.check_output(cmd).decode('utf-8').strip()
       csv = [p.strip() for p in output_file.read_text().strip().splitlines()[0].split(',') if p.strip()]
@@ -96,3 +101,19 @@ class CompilerMetricsJob(LibcxxJob):
       runs.append(tmp_out)
     return runs
 
+
+@registry.registered
+class CompilerMetricsTestSourceJob(CompilerMetricsJob):
+  @registry.registered
+  class Key(JobKey):
+    libcxx: LibcxxVersion
+    standard: Standard
+    input: TestInputs
+
+  @registry.registered
+  class Output(CompilerMetricsList):
+    pass
+
+  def run(self):
+    input_file = self.key.input.path()
+    return self.compile_and_output(input_file)

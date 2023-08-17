@@ -5,13 +5,14 @@ import re
 from pathlib import Path
 from pydantic import BaseModel, Field, RootModel
 from typing import Union, Optional, Any, Annotated, Literal
-from libcxx.config import LIBCXX_VERSIONS_ROOT
+from libcxx.config import LIBCXX_VERSIONS_ROOT, LIBCXX_INPUTS_ROOT
 import subprocess
 import shutil
 import copy
 import rich
 import json
 from enum import Enum
+import functools
 import itertools
 
 CLANG_VERSIONED_RE = re.compile('clang-(?P<MAJOR>\d{1,2})(?P<MINOR>\.\d)(?P<PATCHLEVEL>\.\d)?')
@@ -785,16 +786,91 @@ class Duration(BaseModel):
     import humanfriendly
     return humanfriendly.format_timespan(self.seconds, )
 
+from enum import Enum
+
+class SIPrefix(Enum):
+    YOTTA = 1e24
+    ZETTA = 1e21
+    EXA = 1e18
+    PETA = 1e15
+    TERA = 1e12
+    GIGA = 1e9
+    MEGA = 1e6
+    KILO = 1e3
+    HECTO = 1e2
+    DECA = 1e1
+    BASE = 1
+    DECI = 1e-1
+    CENTI = 1e-2
+    MILLI = 1e-3
+    MICRO = 1e-6
+    NANO = 1e-9
+    PICO = 1e-12
+    FEMTO = 1e-15
+    ATTO = 1e-18
+    ZEPTO = 1e-21
+    YOCTO = 1e-24
+
+    @staticmethod
+    def common_prefixes():
+      S = SIPrefix
+      return [S.TERA, S.GIGA, S.MEGA, S.KILO, S.CENTI, S.MEGA, S.MICRO, S.MILLI, S.NANO]
+
+    def prefix(self):
+      return self.name.lower()
+
+    def __truediv__(self, other):
+        if isinstance(other, SIPrefix):
+            return self.value / float(other.value)
+        else:
+            return NotImplemented
+
+# Usage:
+def SIType(*, suffix=''):
+  def _si_type(cls):
+    for c in SIPrefix.common_prefixes():
+      def new_fn(nc):
+        def fn(obj):
+          return cls(value=obj.value * (obj.prefix / nc), prefix=nc)
+        return fn
+      if c == SIPrefix.BASE:
+        if suffix == '':
+          continue
+        setattr(cls, f'{suffix}', new_fn(c))
+      else:
+        setattr(cls, f'{c.name.lower()}{suffix}', new_fn(c))
+    return cls
+  return _si_type
+
+class SIValue(BaseModel):
+  value : int|float = Field(default=0)
+  prefix : SIPrefix = Field(default=SIPrefix.BASE)
+
+  def to(self, prefix):
+    return SIValue(value=self.value * (self.prefix.value / prefix.value), prefix=prefix)
+
+
+@SIType(suffix='bytes')
+class Bytes(SIValue):
+  def __init__(self, value=0, prefix=SIPrefix.BASE):
+    super().__init__(value=value, prefix=prefix)
+
+  def __int__(self):
+    return self.value
+
+
+
 class MemoryUsage(BaseModel):
   kilobytes: int
 
+
   @property
   def bytes(self):
-    return self.kilobytes * 1000
+    return self.kilobytes * (SIPrefix.KILO / SIPrefix.BASE)
 
   @property
   def gigabytes(self):
-    return self.kilobytes / 1000000.0
+    return self.kilobytes * (SIPrefix.KILO / SIPrefix.GIGA)
 
   @property
   def megabytes(self):
@@ -803,3 +879,33 @@ class MemoryUsage(BaseModel):
   def __str__(self):
     import humanfriendly
     return humanfriendly.format_size(self.bytes, binary=True)
+
+class DebugOpts(Enum):
+  OFF = '-g0'
+  ON = '-g'
+
+  def pathkey(self):
+    if self == DebugOpts.OFF:
+      return "debug_off"
+    elif self == DebugOpts.ON:
+      return "debug_on"
+
+class OptimizerOpts(Enum):
+  O0 = '-O0'
+  O1 = '-O1'
+  O2 = '-O2'
+  O3 = '-O3'
+
+  def pathkey(self):
+    return self.value.replace('-', '')
+
+
+class TestInputs(str, Enum):
+  vector = 'instantiation/vector.cpp'
+  shared_ptr = 'instantiation/shared_ptr.cpp'
+
+  def path(self):
+    return LIBCXX_INPUTS_ROOT / self.value
+
+  def pathkey(self):
+    return self.value

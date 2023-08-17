@@ -12,43 +12,94 @@
         #linePlot {
             flex-grow: 1;
         }
+        #graphSelect {
+            width: 300px;
+        }
     </style>
 </head>
 <body>
+    <div>
+      <select id="graphSelect">
+          <!-- The options will be populated dynamically -->
+      </select>
+    </div>
+
     <div id="fixed-ratio-wrapper">
         <div id="linePlot" class="js-plotly-plot plotly-graph-div"></div>
     </div>
+
+
     <script type="text/javascript">
-        var config = {responsive: true};
-        var container = document.getElementById('linePlot');
-        var width = container.offsetWidth;
-        var height = width / 2;
-        var layout = {
-            title: "{{ title | safe }}",
+        let configs = { responsive: true };
+        let container = document.getElementById('linePlot');
+        let width = container.offsetWidth;
+        let height = width / 2;
+        let selectElement = document.getElementById('graphSelect');
+        let dropdown = document.getElementById('graphSelect');
+
+        let layout = {
+            title: "",
             autosize: false,
             width: width,
             height: height,
             xaxis: {
                 dtick: 0.5,
-                title: "Version"
+                title: "",
             },
             yaxis: {
                 automargin: true,
-                title: "{{ ylabel | safe }}"
+                title: "",
             },
             hovermode: "closest"
         };
-        var data = {{ graphJSON | safe }};
-        Plotly.newPlot('linePlot', data, layout, config);
+
+        let data = {};
+
+        // Fetch the data from your single JSON file (replace URL to your JSON file)
+        fetch('/graph/data.json')
+            .then(response => response.json())
+            .then(jsonData => {
+                data = jsonData;
+
+                // Create an option for each key in the JSON data
+                Object.keys(data).sort().forEach(key => {
+                    let option = document.createElement('option');
+                    option.text = key;
+                    option.value = key;
+                    dropdown.add(option);
+                });
+
+                // Initial load:
+                selectElement.dispatchEvent(new Event('change'));
+            })
+            .catch(error => console.error('Error:', error));
+
+        selectElement.addEventListener('change', function() {
+            let selectedValue = selectElement.value;
+
+            // Get the data of the selected graph
+            let graphData = data[selectedValue];
+
+            layout.title = graphData.title;
+            layout.xaxis.title = graphData.xlabel;
+            layout.yaxis.title = graphData.ylabel;
+
+            Plotly.newPlot('linePlot', graphData.data, layout, configs);
+        });
+
         window.addEventListener('resize', () => {
-            var width = container.offsetWidth;
-            var height = width / 2;
-            var update = {
+            let width = container.offsetWidth;
+            let height = width / 2;
+            let update = {
                 width: width,
                 height: height,
             };
             Plotly.relayout('linePlot', update);
         });
     </script>
+
+
+
 </body>
 </html>
+

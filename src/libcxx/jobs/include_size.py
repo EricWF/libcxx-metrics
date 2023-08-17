@@ -2,14 +2,16 @@ from libcxx.job import *
 from libcxx.types import *
 import subprocess
 import shutil
-
+from libcxx.db import registry
 
 class IncludeSizeJob(LibcxxJob):
+  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
+  @registry.registered
   class Output(BaseModel):
     line_count: int
     size_in_bytes: int

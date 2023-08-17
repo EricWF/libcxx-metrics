@@ -6,21 +6,22 @@ import sys
 import os
 from libcxx.loader import *
 import pydantic
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from threading import RLock
 DATABASE = pw.SqliteDatabase(None)
 DATABASE_PATH = Path(os.path.expanduser('~/.database/libcxx-info.db'))
 DATABASE_TEST_PATH = Path(os.path.expanduser('~/.database/test/libcxx-info.db'))
+import rich
 
 @dataclass
 class ClassRegistry:
-  mapping : dict[str, Any]
-  _lock : RLock()
+  mapping : dict[str, Any] = field(default_factory=dict)
+  _lock : RLock = field(default_factory=RLock)
 
   def registered(self, obj_type):
     with self._lock:
-      name = obj_type.__name__
+      name = obj_type.__qualname__
       assert name not in self.mapping
       self.mapping[name] = obj_type
     return obj_type
@@ -31,20 +32,26 @@ class ClassRegistry:
         return obj
       raise KeyError("Key %s not present" % key)
 
+  def __contains__(self, item):
+    with self._lock:
+      return item in self.mapping
+
+registry = ClassRegistry()
 
 class PydanticWrapper(pydantic.BaseModel):
 
-  class_type : ClassLoaderSpec
+  registry_key : str
   raw_object : str
 
   def object(self):
-    class_type = self.class_type.load()
+    class_type = registry[self.registry_key]
     return class_type.model_validate_json(self.raw_object)
 
   @staticmethod
   def create(obj):
+    assert obj.__class__.__qualname__ in registry
     return PydanticWrapper.model_validate({
-        'class_type': ClassLoaderSpec.create(obj),
+        'registry_key': obj.__class__.__qualname__,
         'raw_object': obj.model_dump_json(round_trip=True)
     })
 

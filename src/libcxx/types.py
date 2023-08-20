@@ -899,13 +899,18 @@ class OptimizerOpts(Enum):
   def pathkey(self):
     return self.value.replace('-', '')
 
-
 class TestInputs(str, Enum):
   vector = 'instantiation/vector.cpp'
   shared_ptr = 'instantiation/shared_ptr.cpp'
-
+  algorithm = 'instantiation/algorithm.cpp'
   def path(self):
     return LIBCXX_INPUTS_ROOT / self.value
 
   def pathkey(self):
     return self.value
+
+  def __hash__(self):
+    return hash(self.path().read_text())
+
+
+

@@ -4,6 +4,7 @@ import multiprocessing
 from pathlib import Path
 import rich
 import sys
+import tempfile
 import os
 import tempfile
 from dataclasses import dataclass
@@ -16,7 +17,7 @@ from libcxx.db import DBDataPoint, init_db, DATABASE
 import tqdm
 from itertools import product, starmap
 from collections import namedtuple
-
+import random
 def _new_tmp_path():
   import tempfile
   return Path(tempfile.mkdtemp(prefix='libcxx-versioned-job')).absolute()
@@ -86,26 +87,31 @@ class JobKey(BaseModel):
         return obj
     return '/'.join([as_key(o) for o in self.key()])
 
+class JobOutput(BaseModel):
+  hash_value : int
 
 
-init_db()
 
-class LibcxxJobResult(BaseModel):
-  job: Any
-  result: Any
 
 class LibcxxJob(BaseModel):
   root_path : Optional[Path] = None
-
   key : Any
   libcxx: Optional[LibcxxInfo]
+
+  class Meta:
+    repeatable =  False
+    runs_per_repeat =  50
+
+  @classmethod
+  def meta(cls):
+    return cls.Meta
 
   @classmethod
   def job_inputs(cls):
     possible = {
-          'standard': Standard.between(Standard.Cpp11, Standard.Cpp23),
+          'standard': Standard.between(Standard.Cpp14, Standard.Cpp23),
           'libcxx': LibcxxVersion.after(LibcxxVersion.v6),
-          'input': [TestInputs.vector, TestInputs.shared_ptr],
+          'input': [TestInputs.vector, TestInputs.shared_ptr, TestInputs.algorithm],
           'header': STLHeader.small_core_header_sample(),
           'debug': [DebugOpts.OFF, DebugOpts.ON],
           'optimize': [OptimizerOpts.O0, OptimizerOpts.O2]
@@ -116,10 +122,19 @@ class LibcxxJob(BaseModel):
   @classmethod
   def jobs(cls):
     obj = cross_product(**cls.job_inputs())
-    j = []
+    jlist = []
     for k in obj:
-      j += [cls.create_job(**k)]
-    return j
+      new_j = cls.create_job(**k)
+
+      jlist += [new_j]
+    if cls.meta().repeatable:
+      new_jobs = []
+      for j in jlist:
+        for i in range(0, cls.meta().runs_per_repeat):
+          new_jobs += [j]
+      random.shuffle(new_jobs)
+      jlist = new_jobs
+    return list(jlist)
 
   @classmethod
   def plotkey_inputs(cls):
@@ -129,7 +144,8 @@ class LibcxxJob(BaseModel):
   def plotkeys(cls):
     return [PlotKey.create(**pk) for pk in cross_product(**cls.plotkey_inputs())]
 
-
+  def hash_value(self):
+    return hash(self.key)
 
   @classmethod
   def from_key(cls, key):
@@ -159,6 +175,20 @@ class LibcxxJob(BaseModel):
   def tmp_path(self):
     return self.root_path / 'tmp'
 
+  @contextlib.contextmanager
+  def tmp_file_guard(self, name, contents=None):
+    fa = tempfile.NamedTemporaryFile(prefix=str(Path(name).stem), suffix=str(Path(name).suffix),  dir=self.tmp_path, delete=False)
+    tmp_file = Path(fa.name)
+    fa.close()
+
+    if contents is not None:
+      tmp_file.write_text(contents)
+    try:
+      yield tmp_file
+    finally:
+      tmp_file.unlink(missing_ok=True)
+
+
   @property
   def output_path(self):
     return self.root_path / 'out'
@@ -185,7 +215,6 @@ class LibcxxJob(BaseModel):
       p.write_text(contents)
     return p
 
-
   @classmethod
   def job_name(cls):
     n = cls.__qualname__
@@ -208,29 +237,45 @@ class LibcxxJob(BaseModel):
   @classmethod
   def create_job(cls, **kwargs):
     key = cls.create_key(**kwargs)
-    return cls.model_validate({'key': key, 'libcxx': key.libcxx.load()})
+    job =  cls.model_validate({'key': key, 'libcxx': key.libcxx.load()})
+    return job
 
   def run_internal(self):
     raise NotImplementedError()
 
   def db_get(self, allow_missing=True):
-    obj = DBDataPoint.get_or_none(key=self.key, job=self.job_name())
-    if obj:
-      if isinstance(obj, tuple):
-        assert False
-      return obj.value
-    if not allow_missing:
-      raise RuntimeError("Cache entry missing for %s" % self.key)
-    return None
+    with DATABASE.atomic():
+      obj = DBDataPoint.get_or_none(key=self.key, job=self.job_name())
+      if obj:
+        if isinstance(obj, tuple):
+          assert False
+        return obj.value
+      if not allow_missing:
+        raise RuntimeError("Cache entry missing for %s" % self.key)
+      return None
 
   def db_store(self, result):
-    assert not isinstance(result, tuple)
-    assert isinstance(result, self.output_type())
-    obj, created = DBDataPoint.get_or_create(key=self.key, job=self.job_name(), value=result)
-    if not created:
-      obj.value = result
-      obj.save()
-    return obj
+    with DATABASE.atomic():
+      assert not isinstance(result, tuple)
+      assert isinstance(result, self.output_type())
+
+      obj, created = DBDataPoint.get_or_create(key=self.key, job=self.job_name(), defaults={'value': result})
+      if not created:
+        if self.meta().repeatable:
+          obj.value.extend(result)
+        else:
+          obj.value = result
+        obj.save()
+      return obj
+
+  def db_append(self, result):
+    assert self.meta().repeatable
+    with DATABASE.atomic():
+      obj, created = DBDataPoint.get_or_create(key=self.key, job=self.job_name(), defaults={'value': result})
+      if not created:
+        obj.value.extend(result)
+        obj.save()
+      return obj
 
   @classmethod
   def db_clear(cls):
@@ -238,16 +283,28 @@ class LibcxxJob(BaseModel):
       query = DBDataPoint.delete().where(DBDataPoint.job == cls.job_name())
       query.execute()
 
-  def __call__(self,  cache=True):
-    if cache:
+  def should_rerun(self, rerun_repeatable=True):
+    if rerun_repeatable and self.meta().repeatable:
+      return True
+    return self.db_contains()
+
+  def db_contains(self):
+    if obj := self.db_get():
+      return True
+    return False
+
+  def __call__(self, rerun_repeatable=True, cache=True):
+    if cache and (not self.meta().repeatable or not rerun_repeatable):
       if obj := self.db_get():
-        return obj
+          return obj
     res = self.run()
     if res is None:
       raise RuntimeError('Result should not be none')
-    if cache:
-      self.db_store(res)
+    if cache or self.meta().repeatable:
+        self.db_store(res)
     return res
+
+
 
 def named_product(**items):
     names = items.keys()
@@ -259,39 +316,40 @@ def cross_product(**job_inputs):
    return named_product(**job_inputs)
 
 
-def create_jobs(cls, *, job_inputs):
-    jobs = [cls.create_job(**fields) for fields in cross_product(**job_inputs)]
-    return jobs
-
-def jobs_to_plotkeys(jobs):
-  res = set()
-  for j in jobs:
-    res.add(j.key.plotkey())
-  return res
 
 def run_return_job(job):
-  res = job.run()
-  return job, res
+  try:
+    res = job.run()
+    return job, res
+  except Exception as E:
+    print(f'ERROR: \n{E}')
+    raise E
+
+
+
+def prepopulate_jobs_shuffeled(jobs):
+  import random
+  random.shuffle(jobs)
 
 def prepopulate_jobs_by_running_threaded(jobs):
   jobs = list(jobs)
   print('Have %d jobs' % len(jobs))
-  jobs = list([j for j in jobs if j.db_get() is None])
+  jobs = list([j for j in jobs if j.should_rerun()])
   if len(jobs) == 0:
     return
-
   with multiprocessing.Pool() as pool:
     for job,res in tqdm.tqdm(pool.imap_unordered(run_return_job, jobs), total=len(list(jobs))):
       if res is None:
-        raise RuntimeError("IDK")
+        pass
       job.db_store(res)
 
 def prepopulate_jobs_by_running_singlethread(jobs):
   if len(jobs) == 0:
     return
-  jobs = [j for j in jobs if j.db_get() is None]
+  jobs = [j for j in jobs if j.should_rerun()]
   for job in jobs:
       res = job.run()
       if res is None:
         raise RuntimeError("IDK")
       job.db_store(res)
+

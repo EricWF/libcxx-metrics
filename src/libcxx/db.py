@@ -39,7 +39,6 @@ class ClassRegistry:
 registry = ClassRegistry()
 
 class PydanticWrapper(pydantic.BaseModel):
-
   registry_key : str
   raw_object : str
 
@@ -69,12 +68,13 @@ class PydanticModelType(pw.TextField):
 
 
 class DBDataPoint(pw.Model):
-  key = PydanticModelType(primary_key=True)
-  value  = PydanticModelType()
+  key = PydanticModelType()
+  value = PydanticModelType()
   job = pw.TextField()
 
   class Meta:
     database = DATABASE
+    primary_key = pw.CompositeKey('key', 'job')
 
 
 def init_db(path=DATABASE_PATH):
@@ -84,7 +84,6 @@ def init_db(path=DATABASE_PATH):
   if DATABASE.is_closed():
     DATABASE.connect()
     DATABASE.create_tables([DBDataPoint])
-
 
 
 if __name__ == '__main__':

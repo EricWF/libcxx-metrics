@@ -78,29 +78,29 @@ def generate_json_file(output_path):
   for s in STD_DIALECTS:
     data = {
         mkname('include/time', s): generate_json(CompilerMetricsJob, s, lambda
-            x: x.recompute_average().total_execution_time.milliseconds,
+            x: x.compute_average().total_execution_time.milliseconds,
                                                  ylabel='milliseconds',
                                                  title='Total Time'),
         mkname('include/usr-time', s): generate_json(CompilerMetricsJob, s,
                                                      lambda
-            x: x.recompute_average().user_execution_time.milliseconds,
+            x: x.compute_average().user_execution_time.milliseconds,
                                                      ylabel='milliseconds',
                                                      title='User Time'),
         mkname('include/memory', s): generate_json(CompilerMetricsJob, s, lambda
-            x: x.recompute_average().peak_memory_usage.kilobytes,
+            x: x.compute_average().peak_memory_usage.kilobytes,
                                                    ylabel='Kilobytes',
                                                    title='Peak Memory Usage'),
         mkname('instantiate/time', s): generate_json(
           CompilerMetricsTestSourceJob, s, lambda
-              x: x.recompute_average().total_execution_time.milliseconds,
+              x: x.compute_average().total_execution_time.milliseconds,
           ylabel='milliseconds', title='Total Time'),
         mkname('instantiate/usr-time', s): generate_json(
           CompilerMetricsTestSourceJob, s, lambda
-              x: x.recompute_average().user_execution_time.milliseconds,
+              x: x.compute_average().user_execution_time.milliseconds,
           ylabel='milliseconds', title='User Time'),
         mkname('instantiate/memory', s): generate_json(
           CompilerMetricsTestSourceJob, s, lambda
-              x: x.recompute_average().peak_memory_usage.kilobytes,
+              x: x.compute_average().peak_memory_usage.kilobytes,
           ylabel='Kilobytes',
           title='Peak Memory Usage'),
 

@@ -18,6 +18,10 @@ import tqdm
 from itertools import product, starmap
 from collections import namedtuple
 import random
+import sys
+
+RERUN_REPEATABLE = '--rerun' in sys.argv
+
 def _new_tmp_path():
   import tempfile
   return Path(tempfile.mkdtemp(prefix='libcxx-versioned-job')).absolute()
@@ -244,7 +248,6 @@ class LibcxxJob(BaseModel):
     raise NotImplementedError()
 
   def db_get(self, allow_missing=True):
-    with DATABASE.atomic():
       obj = DBDataPoint.get_or_none(key=self.key, job=self.job_name())
       if obj:
         if isinstance(obj, tuple):
@@ -255,7 +258,6 @@ class LibcxxJob(BaseModel):
       return None
 
   def db_store(self, result):
-    with DATABASE.atomic():
       assert not isinstance(result, tuple)
       assert isinstance(result, self.output_type())
 
@@ -269,8 +271,7 @@ class LibcxxJob(BaseModel):
       return obj
 
   def db_append(self, result):
-    assert self.meta().repeatable
-    with DATABASE.atomic():
+      assert self.meta().repeatable
       obj, created = DBDataPoint.get_or_create(key=self.key, job=self.job_name(), defaults={'value': result})
       if not created:
         obj.value.extend(result)
@@ -279,21 +280,20 @@ class LibcxxJob(BaseModel):
 
   @classmethod
   def db_clear(cls):
-    with DATABASE.atomic():
       query = DBDataPoint.delete().where(DBDataPoint.job == cls.job_name())
       query.execute()
 
-  def should_rerun(self, rerun_repeatable=True):
+  def should_rerun(self, rerun_repeatable=RERUN_REPEATABLE):
     if rerun_repeatable and self.meta().repeatable:
       return True
-    return self.db_contains()
+    return not self.db_contains()
 
   def db_contains(self):
     if obj := self.db_get():
       return True
     return False
 
-  def __call__(self, rerun_repeatable=True, cache=True):
+  def __call__(self, rerun_repeatable=RERUN_REPEATABLE, cache=True):
     if cache and (not self.meta().repeatable or not rerun_repeatable):
       if obj := self.db_get():
           return obj
@@ -335,10 +335,11 @@ def prepopulate_jobs_by_running_threaded(jobs):
   jobs = list(jobs)
   print('Have %d jobs' % len(jobs))
   jobs = list([j for j in jobs if j.should_rerun()])
+  prepopulate_jobs_shuffeled(jobs)
   if len(jobs) == 0:
     return
   with multiprocessing.Pool() as pool:
-    for job,res in tqdm.tqdm(pool.imap_unordered(run_return_job, jobs), total=len(list(jobs))):
+    for job,res in tqdm.tqdm(pool.imap(run_return_job, jobs, chunksize=64), total=len(list(jobs))):
       if res is None:
         pass
       job.db_store(res)

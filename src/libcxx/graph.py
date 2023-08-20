@@ -16,12 +16,13 @@ jinja_env = Environment(loader=file_loader)
 
 
 def prepopulate():
-  mp_jobs = StdSymbolsJob.jobs()
-  mp_jobs += IncludeSizeJob.jobs()
-  mp_jobs += BinarySizeJob.jobs()
-  prepopulate_jobs_by_running_threaded(mp_jobs)
-  st_jobs = CompilerMetricsJob.jobs()
+  st_jobs = StdSymbolsJob.jobs()
+  st_jobs += IncludeSizeJob.jobs()
+  st_jobs += BinarySizeJob.jobs()
+  st_jobs += CompilerMetricsJob.jobs()
   st_jobs += CompilerMetricsTestSourceJob.jobs()
+  import random
+  random.shuffle(st_jobs)
   prepopulate_jobs_by_running_threaded(st_jobs)
 
   # prepopulate_jobs_by_running_singlethread(st_jobs)

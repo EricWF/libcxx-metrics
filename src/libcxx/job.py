@@ -117,7 +117,7 @@ class LibcxxJob(BaseModel):
     possible = {
           'standard': Standard.between(Standard.Cpp14, Standard.Cpp23),
           'libcxx': LibcxxVersion.after(LibcxxVersion.v6),
-          'input': [TestInputs.vector, TestInputs.shared_ptr, TestInputs.algorithm],
+          'input': [ti for ti in TestInputs],
           'header': STLHeader.small_core_header_sample(),
           'debug': [DebugOpts.OFF, DebugOpts.ON],
           'optimize': [OptimizerOpts.O0, OptimizerOpts.O2]
@@ -356,15 +356,15 @@ import asyncio
 from asyncio import Queue, Semaphore
 
 
-async def run_command_queue(semaphore, queue, pbar):
-    async with semaphore:
-        while True:
+async def run_command_queue(done_event, queue, pbar):
+    while not done_event.is_set():
+          try:
             job = await queue.get()
             if job is None:
-                queue.task_done()
                 return
             res = await job.arun()
             job.db_store(res)
+          finally:
             pbar.update(1)
             queue.task_done()
 
@@ -375,44 +375,22 @@ async def async_run_jobs(jobs):
   print('Shuffling the jobs')
   random.seed(random.getrandbits(256))
   random.shuffle(jobs)
+  NUM_THREADS = 64
   with tqdm.tqdm(total=len(jobs)) as pbar:
-    SEMAPHORE = asyncio.Semaphore(72)
+    done_event = asyncio.Event()
     queue = asyncio.Queue()
-    workers = [run_command_queue(SEMAPHORE, queue, pbar) for _ in range(64)]
+    workers = [run_command_queue(done_event, queue, pbar) for _ in range(NUM_THREADS)]
     producer = [await queue.put(j) for j in jobs]
 
 
     print('Stopping the workers')
 
-    for _ in range(72):
-        await queue.put(None)
-    await asyncio.gather(*workers)
+
     print('Joining the queue')
+
     await queue.join()
+    done_event.set()
+    await asyncio.gather(*workers)
     print('done joining')
   pbar.close()
 
-async def run_task(sema, job):
-  if not job.should_rerun():
-    return
-  async with sema:
-    res = await job.arun()
-  job.db_store(res)
-
-
-
-async def async_roun_jobs(jobs):
-  sema = asyncio.Semaphore(72)
-  random.seed(random.getrandbits(256))
-  random.shuffle(jobs)
-  tasks = []
-
-  pbar = tqdm.tqdm(total=len(jobs))
-  with pbar as pbar:
-    def on_done(_):
-      pbar.update(1)
-    for j in jobs:
-      task = asyncio.create_task(run_task(sema=sema, job=j))
-      task.add_done_callback(on_done)
-      tasks += [task]
-    await asyncio.gather(*tasks)

@@ -4,6 +4,7 @@ import sys
 import os
 import rich
 from libcxx.graph import *
+
 import argparse
 from pathlib import Path
 
@@ -17,6 +18,7 @@ def upload_file(src, dst):
   print('Uploaded %s to %s' % (src, dst))
 
 def main():
+  init_db()
   parser = argparse.ArgumentParser()
   parser.add_argument('--data', type=str, required=False, default=None)
   args = parser.parse_args()

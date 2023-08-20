@@ -5,13 +5,14 @@ import re
 from pathlib import Path
 from pydantic import BaseModel, Field, RootModel
 from typing import Union, Optional, Any, Annotated, Literal
-from libcxx.config import LIBCXX_VERSIONS_ROOT, LIBCXX_INPUTS_ROOT
+from libcxx.config import LIBCXX_VERSIONS_ROOT, LIBCXX_INPUTS_ROOT, LLVM_PROJECT_ROOT
 import subprocess
 import shutil
 import copy
 import rich
 import json
 from enum import Enum
+import subprocess
 import functools
 import itertools
 
@@ -196,6 +197,14 @@ class LibcxxVersion(str, Enum):
   def before(v1):
     vlist = [v for v in LibcxxVersion]
     return vlist[:vlist.index(v1)]
+
+  def git_tag(self):
+    if self == LibcxxVersion.trunk:
+      return 'main'
+    else:
+      return f'llvmorg-{self.value}'
+
+
 
   def load(self, root=LIBCXX_VERSIONS_ROOT):
     root = Path(root).absolute()
@@ -903,6 +912,7 @@ class TestInputs(str, Enum):
   vector = 'instantiation/vector.cpp'
   shared_ptr = 'instantiation/shared_ptr.cpp'
   algorithm = 'instantiation/algorithm.cpp'
+  unordered_map = 'instantiation/unordered_map.cpp'
   def path(self):
     return LIBCXX_INPUTS_ROOT / self.value
 

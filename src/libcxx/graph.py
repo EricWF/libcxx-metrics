@@ -4,10 +4,12 @@ import plotly
 import plotly.graph_objs as go
 import pandas as pd
 import tqdm
-
+if __name__ == '__main__':
+  from libcxx.jobs import *
 import asyncio
 from libcxx.job import *
-from libcxx.jobs import *
+from libcxx.jobs.git_stats import *
+
 from jinja2 import Environment, FileSystemLoader
 
 STD_DIALECTS = Standard.between(Standard.Cpp14, Standard.Cpp23)
@@ -23,6 +25,7 @@ def create_all_jobs():
   st_jobs += BinarySizeJob.jobs()
   st_jobs += CompilerMetricsJob.jobs()
   st_jobs += CompilerMetricsTestSourceJob.jobs()
+  st_jobs += LibcxxGitStatsJob.jobs()
   import random
   random.seed(random.getrandbits(128))
   random.shuffle(st_jobs)
@@ -30,7 +33,9 @@ def create_all_jobs():
 
 
 def prepopulate():
-
+  jobs = create_all_jobs()
+  prepopulate_jobs_by_running_threaded(jobs)
+  return
   #prepopulate_jobs_by_running_threaded(create_all_jobs())
   aprepopulate()
   # prepopulate_jobs_by_running_singlethread(st_jobs)
@@ -126,7 +131,12 @@ def generate_json_file(output_path):
         mkname('binary_size', s): generate_json(BinarySizeJob, s,
                                                 lambda x: x.bytes,
                                                 ylabel='bytes',
-                                                title='Object Size')
+                                                title='Object Size'),
+          mkname('test_ratio', s): generate_json(LibcxxGitStatsJob, s,
+                                                lambda x: x.stats.test_to_src_ratio.mean,
+                                                ylabel='bytes',
+                                                title='Ratio')
+
     }
     all_data.update(data)
   output_path.write_text(
@@ -134,7 +144,6 @@ def generate_json_file(output_path):
   return all_data
 
 if __name__ == '__main__':
-
   init_db()
   prepopulate()
   generate_json_file('/tmp/data.json')

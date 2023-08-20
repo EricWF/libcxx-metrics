@@ -47,11 +47,11 @@ class BinarySizeJob(LibcxxJob):
 
   def postprocess_output(self, proc, out):
     if proc.returncode != 0:
-      rich.print(f'Compilation failed for {self.input_file}.name with code {proc.returncode} for invocation:\n  {" ".join(cmd)}')
+      rich.print(f'Compilation failed for {self.state.input_file}.name with code {proc.returncode} for invocation:\n  {" ".join(self.state.cmd)}')
       rich.print(out.decode('utf-8'))
       return None
 
-    stat = os.stat(self.object_file)
+    stat = os.stat(self.state.object_file)
     return BinarySizeJob.Output(bytes=stat.st_size)
 
 

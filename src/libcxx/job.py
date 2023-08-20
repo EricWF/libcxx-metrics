@@ -13,12 +13,14 @@ from typing import Callable
 from dataclasses import dataclass, field
 from threading import RLock
 from pydantic import ConfigDict
+import asyncio
 from libcxx.db import DBDataPoint, init_db, DATABASE
 import tqdm
 from itertools import product, starmap
 from collections import namedtuple
 import random
 import sys
+import random
 
 RERUN_REPEATABLE = '--rerun' in sys.argv
 
@@ -125,13 +127,11 @@ class LibcxxJob(BaseModel):
 
   @classmethod
   def jobs(cls):
-    obj = cross_product(**cls.job_inputs())
     jlist = []
-    for k in obj:
+    for k in cross_product(**cls.job_inputs()):
       new_j = cls.create_job(**k)
-
       jlist += [new_j]
-    if cls.meta().repeatable:
+    if cls.meta().repeatable and RERUN_REPEATABLE:
       new_jobs = []
       for j in jlist:
         for i in range(0, cls.meta().runs_per_repeat):
@@ -289,9 +289,7 @@ class LibcxxJob(BaseModel):
     return not self.db_contains()
 
   def db_contains(self):
-    if obj := self.db_get():
-      return True
-    return False
+    return DBDataPoint.get_or_none(DBDataPoint.key == self.key) is not None
 
   def __call__(self, rerun_repeatable=RERUN_REPEATABLE, cache=True):
     if cache and (not self.meta().repeatable or not rerun_repeatable):
@@ -328,7 +326,6 @@ def run_return_job(job):
 
 
 def prepopulate_jobs_shuffeled(jobs):
-  import random
   random.shuffle(jobs)
 
 def prepopulate_jobs_by_running_threaded(jobs):
@@ -354,3 +351,68 @@ def prepopulate_jobs_by_running_singlethread(jobs):
         raise RuntimeError("IDK")
       job.db_store(res)
 
+
+import asyncio
+from asyncio import Queue, Semaphore
+
+
+async def run_command_queue(semaphore, queue, pbar):
+    async with semaphore:
+        while True:
+            job = await queue.get()
+            if job is None:
+                queue.task_done()
+                return
+            res = await job.arun()
+            job.db_store(res)
+            pbar.update(1)
+            queue.task_done()
+
+
+async def async_run_jobs(jobs):
+  print('Pruning the jobs')
+  jobs = [j for j in jobs if j.should_rerun()]
+  print('Shuffling the jobs')
+  random.seed(random.getrandbits(256))
+  random.shuffle(jobs)
+  with tqdm.tqdm(total=len(jobs)) as pbar:
+    SEMAPHORE = asyncio.Semaphore(72)
+    queue = asyncio.Queue()
+    workers = [run_command_queue(SEMAPHORE, queue, pbar) for _ in range(64)]
+    producer = [await queue.put(j) for j in jobs]
+
+
+    print('Stopping the workers')
+
+    for _ in range(72):
+        await queue.put(None)
+    await asyncio.gather(*workers)
+    print('Joining the queue')
+    await queue.join()
+    print('done joining')
+  pbar.close()
+
+async def run_task(sema, job):
+  if not job.should_rerun():
+    return
+  async with sema:
+    res = await job.arun()
+  job.db_store(res)
+
+
+
+async def async_roun_jobs(jobs):
+  sema = asyncio.Semaphore(72)
+  random.seed(random.getrandbits(256))
+  random.shuffle(jobs)
+  tasks = []
+
+  pbar = tqdm.tqdm(total=len(jobs))
+  with pbar as pbar:
+    def on_done(_):
+      pbar.update(1)
+    for j in jobs:
+      task = asyncio.create_task(run_task(sema=sema, job=j))
+      task.add_done_callback(on_done)
+      tasks += [task]
+    await asyncio.gather(*tasks)

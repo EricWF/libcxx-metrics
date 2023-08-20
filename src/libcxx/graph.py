@@ -4,6 +4,8 @@ import plotly
 import plotly.graph_objs as go
 import pandas as pd
 import tqdm
+
+import asyncio
 from libcxx.job import *
 from libcxx.jobs import *
 from jinja2 import Environment, FileSystemLoader
@@ -15,18 +17,27 @@ file_loader = FileSystemLoader(TEMPLATE_DIR)
 jinja_env = Environment(loader=file_loader)
 
 
-def prepopulate():
+def create_all_jobs():
   st_jobs = StdSymbolsJob.jobs()
   st_jobs += IncludeSizeJob.jobs()
   st_jobs += BinarySizeJob.jobs()
   st_jobs += CompilerMetricsJob.jobs()
   st_jobs += CompilerMetricsTestSourceJob.jobs()
   import random
+  random.seed(random.getrandbits(128))
   random.shuffle(st_jobs)
-  prepopulate_jobs_by_running_threaded(st_jobs)
+  return st_jobs
 
+
+def prepopulate():
+
+  #prepopulate_jobs_by_running_threaded(create_all_jobs())
+  aprepopulate()
   # prepopulate_jobs_by_running_singlethread(st_jobs)
 
+def aprepopulate():
+  jobs = create_all_jobs()
+  asyncio.run(async_run_jobs(jobs))
 
 def generate_json(cls, std, getter, ylabel, title):
   versions = cls.job_inputs()['libcxx']

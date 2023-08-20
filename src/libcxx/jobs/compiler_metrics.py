@@ -1,3 +1,5 @@
+import asyncio
+
 from pydantic import BaseModel
 from libcxx.types import *
 from libcxx.job import *
@@ -5,6 +7,8 @@ import shutil
 import subprocess
 from libcxx.db import registry
 from types import SimpleNamespace as Namespace
+import asyncio
+import aiofiles
 
 class CompilerMetrics(BaseModel):
   filename: str
@@ -97,16 +101,45 @@ class CompilerMetricsJob(LibcxxJob):
           [f'-fproc-stat-report={output_file}'] + \
           ['-xc++', str(self.input_file)]
 
-  def run(self, runs=1):
-    return self.run_impl(runs=runs)
 
-  def run_impl(self, runs=1):
+  def run(self, runs=1):
     output = self.output_type().model_validate({'hash_value': self.hash_value()})
     with self.tmp_file_guard('results.txt') as output_filename:
       cmd = self.make_cmd(output_filename)
       for i in range(0, runs):
         out = subprocess.check_output(cmd).decode('utf-8').strip()
         csv = [p.strip() for p in output_filename.read_text().strip().splitlines()[0].split(',') if p.strip()]
+        tmp_out = CompilerMetrics.model_validate({
+            'filename': csv[0],
+            'output_filename': csv[1],
+            'total_execution_time': {
+                'microseconds': int(csv[2])
+            },
+            'user_execution_time': {
+                'microseconds': int(csv[3])
+            },
+            'peak_memory_usage': {
+                'kilobytes': int(csv[4])
+            }
+        })
+        output.append(tmp_out)
+    return output
+
+
+  async def arun(self, runs=1):
+    output = self.output_type().model_validate({'hash_value': self.hash_value()})
+    with self.tmp_file_guard('results.txt') as output_filename:
+      cmd = self.make_cmd(output_filename)
+      for i in range(0, runs):
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        stdout, _ = await process.communicate()
+        out = stdout.decode('utf-8').strip()
+        if process.returncode != 0:
+          raise RuntimeError('Process %s failed with return code %s and output: %s' % (cmd, process.returncode, out))
+        assert process.returncode == 0
+        async with aiofiles.open(output_filename, mode='r') as f:
+          content = await f.read()
+        csv = [p.strip() for p in content.splitlines()[0].split(',') if p.strip()]
         tmp_out = CompilerMetrics.model_validate({
             'filename': csv[0],
             'output_filename': csv[1],
@@ -135,6 +168,3 @@ class CompilerMetricsTestSourceJob(CompilerMetricsJob):
   @registry.registered
   class Output(CompilerMetricsList):
     pass
-
-  def run(self, runs=1):
-    return self.run_impl(runs=runs)

@@ -1,20 +1,18 @@
 import asyncio
-
-from libcxx.job import *
+from pydantic import BaseModel, model_validator
+from libcxx.job import JobOutput, LibcxxJob, JobKey
 from libcxx.types import *
 import subprocess
 import shutil
-from libcxx.db import registry
 from types import SimpleNamespace
 
 class IncludeSizeJob(LibcxxJob):
-  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
-  @registry.registered
+
   class Output(BaseModel):
     line_count: int
     size_in_bytes: int
@@ -45,7 +43,6 @@ class IncludeSizeJob(LibcxxJob):
   def run(self):
     out = subprocess.check_output(self.state.cmd)
     return self.postprocess_output(out)
-
 
   async def arun(self):
     process = await asyncio.create_subprocess_exec(*self.state.cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)

@@ -4,12 +4,14 @@ import plotly
 import plotly.graph_objs as go
 import pandas as pd
 import tqdm
+import rich.progress
+
 if __name__ == '__main__':
   from libcxx.jobs import *
 import asyncio
 from libcxx.job import *
 from libcxx.jobs.git_stats import *
-
+from libcxx.db import init_db
 from jinja2 import Environment, FileSystemLoader
 
 STD_DIALECTS = Standard.between(Standard.Cpp14, Standard.Cpp23)
@@ -19,44 +21,37 @@ file_loader = FileSystemLoader(TEMPLATE_DIR)
 jinja_env = Environment(loader=file_loader)
 
 
-def create_all_jobs():
-  st_jobs = StdSymbolsJob.jobs()
-  st_jobs += IncludeSizeJob.jobs()
-  st_jobs += BinarySizeJob.jobs()
-  st_jobs += CompilerMetricsJob.jobs()
-  st_jobs += CompilerMetricsTestSourceJob.jobs()
-  st_jobs += LibcxxGitStatsJob.jobs()
-  import random
-  random.seed(random.getrandbits(128))
-  random.shuffle(st_jobs)
-  return st_jobs
-
-
 def prepopulate():
-  jobs = create_all_jobs()
+  jobs = LibcxxJob.all_jobs()
   prepopulate_jobs_by_running_threaded(jobs)
-  return
-  #prepopulate_jobs_by_running_threaded(create_all_jobs())
-  aprepopulate()
-  # prepopulate_jobs_by_running_singlethread(st_jobs)
+
 
 def aprepopulate():
-  jobs = create_all_jobs()
+  jobs = LibcxxJob.all_jobs()
   asyncio.run(async_run_jobs(jobs))
 
-def generate_json(cls, std, getter, ylabel, title):
-  versions = cls.job_inputs()['libcxx']
-  versions.sort()
+
+class GraphDefinition(BaseModel):
+  title: str
+  x_label: str
+  y_label: str
+  data: list[go.Scatter] = Field(default_factory=list)
+  model_config = {'arbitrary_types_allowed': True}
+
+
+def generate_json(cls, *, x_key, x_label, x_values, key_parts, getter, y_label,
+    title):
+  x_values.sort()
   plotkeys = cls.plotkeys()
   data = {
-      'version': [v.value for v in versions]
+      x_label: [x.value for x in x_values]
   }
   dp = lambda **kwargs: getter(
-    cls.create_job(**kwargs).db_get(allow_missing=False))
+      cls.create_job(**kwargs).db_get(allow_missing=False))
 
   for h in plotkeys:
     data[h.name] = list(
-        [dp(libcxx=v, standard=std, **h.key_parts) for v in versions])
+        [dp(**{x_key: v}, **key_parts, **h.key_parts) for v in x_values])
 
   # Convert data to DataFrame
   df = pd.DataFrame(data)
@@ -64,86 +59,112 @@ def generate_json(cls, std, getter, ylabel, title):
   for h in plotkeys:
     # Create a trace
     traces += [go.Scatter(
-        x=df['version'],
+        x=df[x_label],
         y=df[h.name],
         mode='lines+markers',
         name=h.name
     )]
 
-  graphJSON = json.dumps(traces, cls=plotly.utils.PlotlyJSONEncoder)
-
-  output = {
-      "title": title + f': {std.value}',
-      'xlabel': 'Versions',
-      "ylabel": ylabel,
+  return GraphDefinition.model_validate({
+      "title": title,
+      'x_label': x_label,
+      "y_label": y_label,
       "data": traces  # This line includes the Plotly JSON in the output
-  }
-  return output
+  })
 
 
+class GraphStore(RootModel):
+  root: dict[str, GraphDefinition] = Field(default_factory=dict)
+
+  def __getitem__(self, item):
+    return self.root[item]
+
+  def __setitem__(self, key, value):
+    return self.root.__setitem__(key, value)
+
+  def update(self, other):
+    if isinstance(other, GraphStore):
+      other = other.root
+    self.root.update(other)
+
+  def dump_plotly_json(self):
+    return json.dumps(self.model_dump(), cls=plotly.utils.PlotlyJSONEncoder)
+
+class ArgPack:
+  def __init__(self, *args, **kwargs):
+    self.args = list(args)
+    self.kwargs = dict(kwargs)
+  
+  def __call__(self, fn):
+    return fn(*self.args, **self.kwargs)
+  
 
 def generate_json_file(output_path):
-  output_path = Path(output_path).absolute()
-  plotkeys = []
 
-  def mkname(key, std):
-    return f'{key}/{std.value}'
-
-  all_data = {}
-
+  all_data = GraphStore()
+  def mk_data(name_prefix, cls,standard, getter, y_label, title):
+      title = title + f' {standard.value}'
+      key_name = f'{name_prefix}/{standard.value}'
+      ret = generate_json(cls, x_label='version', x_key='libcxx',
+                          x_values=cls.job_inputs()['libcxx'],
+                          key_parts={'standard': standard}, getter=getter,
+                          y_label=y_label,
+                          title=title)
+      all_data[key_name] = ret
+  to_do = []
   for s in STD_DIALECTS:
-    data = {
-        mkname('include/time', s): generate_json(CompilerMetricsJob, s, lambda
-            x: x.compute_average().total_execution_time.milliseconds,
-                                                 ylabel='milliseconds',
-                                                 title='Total Time'),
-        mkname('include/usr-time', s): generate_json(CompilerMetricsJob, s,
-                                                     lambda
-            x: x.compute_average().user_execution_time.milliseconds,
-                                                     ylabel='milliseconds',
-                                                     title='User Time'),
-        mkname('include/memory', s): generate_json(CompilerMetricsJob, s, lambda
-            x: x.compute_average().peak_memory_usage.kilobytes,
-                                                   ylabel='Kilobytes',
-                                                   title='Peak Memory Usage'),
-        mkname('instantiate/time', s): generate_json(
-          CompilerMetricsTestSourceJob, s, lambda
-              x: x.compute_average().total_execution_time.milliseconds,
-          ylabel='milliseconds', title='Total Time'),
-        mkname('instantiate/usr-time', s): generate_json(
-          CompilerMetricsTestSourceJob, s, lambda
-              x: x.compute_average().user_execution_time.milliseconds,
-          ylabel='milliseconds', title='User Time'),
-        mkname('instantiate/memory', s): generate_json(
-          CompilerMetricsTestSourceJob, s, lambda
-              x: x.compute_average().peak_memory_usage.kilobytes,
-          ylabel='Kilobytes',
-          title='Peak Memory Usage'),
+    to_do += [
+      ArgPack('include/time', CompilerMetricsJob, s, lambda
+          x: x.compute_average().total_execution_time.milliseconds,
+              y_label='milliseconds',
+              title='Total Time'),
+      ArgPack('include/usr-time', CompilerMetricsJob,
+              s, lambda
+                  x: x.compute_average().user_execution_time.milliseconds,
+              y_label='milliseconds',
+              title='User Time'),
+      ArgPack('include/memory', CompilerMetricsJob, s, lambda
+          x: x.compute_average().peak_memory_usage.kilobytes,
+              y_label='Kilobytes',
+              title='Peak Memory Usage'),
+      ArgPack('instantiate/time',
+              CompilerMetricsTestSourceJob, s, lambda
+                  x: x.compute_average().total_execution_time.milliseconds,
+              y_label='milliseconds', title='Total Time'),
+      ArgPack('instantiate/usr-time',
+              CompilerMetricsTestSourceJob, s, lambda
+                  x: x.compute_average().user_execution_time.milliseconds,
+              y_label='milliseconds', title='User Time'),
+      ArgPack('instantiate/memory',
+              CompilerMetricsTestSourceJob, s, lambda
+                  x: x.compute_average().peak_memory_usage.kilobytes,
+              y_label='Kilobytes',
+              title='Peak Memory Usage'),
+      ArgPack('include_size', IncludeSizeJob,
+              s, lambda x: x.line_count,
+              y_label='LOC',
+              title='Preprocessed LOC'),
+      ArgPack('symbol_count', StdSymbolsJob,
+              s, lambda x: x.symbol_count,
+              y_label='# Symbols',
+              title='Visible Symbols'),
+      ArgPack('binary_size', BinarySizeJob,
+              s, lambda x: x.bytes,
+              y_label='bytes',
+              title='Object Size')
+    ]
+  for a in rich.progress.track(to_do, description='Generating graphs...'):
+    a(mk_data)
 
-        mkname('include_size', s): generate_json(IncludeSizeJob, s,
-                                                 lambda x: x.line_count,
-                                                 ylabel='LOC',
-                                                 title='Preprocessed LOC', ),
-        mkname('symbol_count', s): generate_json(StdSymbolsJob, s,
-                                                 lambda x: x.symbol_count,
-                                                 ylabel='# Symbols',
-                                                 title='Visible Symbols'),
-        mkname('binary_size', s): generate_json(BinarySizeJob, s,
-                                                lambda x: x.bytes,
-                                                ylabel='bytes',
-                                                title='Object Size'),
-          mkname('test_ratio', s): generate_json(LibcxxGitStatsJob, s,
-                                                lambda x: x.stats.test_to_src_ratio.mean,
-                                                ylabel='bytes',
-                                                title='Ratio')
-
-    }
-    all_data.update(data)
+  output_path = Path(output_path).absolute()
+  rich.print(f'Writing data to {output_path}')
   output_path.write_text(
-    json.dumps(all_data, indent=2, cls=plotly.utils.PlotlyJSONEncoder))
+      json.dumps(all_data.model_dump(), cls=plotly.utils.PlotlyJSONEncoder))
   return all_data
+
 
 if __name__ == '__main__':
   init_db()
-  prepopulate()
+  if '--run' in sys.argv or '--rerun' in sys.argv:
+    prepopulate()
   generate_json_file('/tmp/data.json')

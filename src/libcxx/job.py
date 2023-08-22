@@ -2,25 +2,13 @@ from libcxx.types import *
 from pydantic import BaseModel, Field, model_validator
 import multiprocessing
 from pathlib import Path
-import rich
-import sys
-import tempfile
-import os
-import tempfile
-from dataclasses import dataclass
-import json
-from typing import Callable
-from dataclasses import dataclass, field
-from threading import RLock
-from pydantic import ConfigDict
-import asyncio
-from libcxx.db import DBDataPoint, init_db, DATABASE
+import os, re, sys, rich, tempfile, json,  asyncio, random
+import libcxx.db as db
+from libcxx.db import DBDataPoint, init_db
+import itertools
 import tqdm
-from itertools import product, starmap
-from collections import namedtuple
 import random
-import sys
-import random
+random.seed(random.getrandbits(128))
 
 RERUN_REPEATABLE = '--rerun' in sys.argv
 
@@ -36,6 +24,8 @@ def cd_guard(new_dir):
     yield new_dir
   finally:
     os.chdir(old_dir)
+
+
 
 
 
@@ -96,8 +86,7 @@ class JobKey(BaseModel):
 class JobOutput(BaseModel):
   hash_value : int
 
-
-
+JOBS_REGISTRY = set()
 
 class LibcxxJob(BaseModel):
   root_path : Optional[Path] = None
@@ -105,8 +94,30 @@ class LibcxxJob(BaseModel):
   libcxx: Optional[LibcxxInfo]
 
   class Meta:
-    repeatable =  False
-    runs_per_repeat =  50
+    repeatable = False
+    runs_per_repeat = 50
+
+  def __init_subclass__(cls, **kwargs):
+    super().__init_subclass__(**kwargs)
+    db.registry.add(cls.key_type())
+    db.registry.add(cls.output_type())
+    db.registry.add(cls)
+    global JOBS_REGISTRY
+    JOBS_REGISTRY.add(cls)
+
+  @staticmethod
+  def all_job_types():
+    global JOBS_REGISTRY
+    return list([j for j in JOBS_REGISTRY])
+
+  @staticmethod
+  def all_jobs():
+    jobs = []
+    for jt in LibcxxJob.all_job_types():
+      jobs += jt.jobs()
+
+    random.shuffle(jobs)
+    return jobs
 
   @classmethod
   def meta(cls):

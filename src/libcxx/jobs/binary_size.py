@@ -1,15 +1,13 @@
 import asyncio
 
 from libcxx.types import *
-from libcxx.db import registry
-from libcxx.job import *
+from libcxx.job import LibcxxJob, JobKey
 import subprocess
 import shutil
 from types import SimpleNamespace
 import asyncio
-@registry.registered
+
 class BinarySizeJob(LibcxxJob):
-  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
@@ -17,7 +15,6 @@ class BinarySizeJob(LibcxxJob):
     debug: DebugOpts
     optimize: OptimizerOpts
 
-  @registry.registered
   class Output(BaseModel):
     bytes: int
 

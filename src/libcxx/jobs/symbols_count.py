@@ -16,13 +16,12 @@ QUERY_STR = \
   '''.strip() + '\n'
 
 class StdSymbolsJob(LibcxxJob):
-  @registry.registered
+
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
-  @registry.registered
   class Output(BaseModel):
     symbol_count: int
 
@@ -45,12 +44,14 @@ class StdSymbolsJob(LibcxxJob):
                  '-f', self.tmp_file('matcher.txt', QUERY_STR),
                  '-p', self.state.db_file] + [self.state.input_file]
 
-  @staticmethod
-  def postprocess_output(output):
+
+  def postprocess_output(self, output):
     out = output.decode('utf-8').strip()
     last_line_re = re.compile('(?P<COUNT>\d+) matches.')
     m = last_line_re.match(out.splitlines()[-1])
-    return StdSymbolsJob.Output(symbol_count=int(m.group('COUNT')))
+    return StdSymbolsJob.Output.model_validate({
+      'symbol_count': int(m.group('COUNT'))
+    })
 
   def run(self):
     self.setup_state()

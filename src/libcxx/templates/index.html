@@ -81,8 +81,8 @@
             let graphData = data[selectedValue];
 
             layout.title = graphData.title;
-            layout.xaxis.title = graphData.xlabel;
-            layout.yaxis.title = graphData.ylabel;
+            layout.xaxis.title = graphData.x_label;
+            layout.yaxis.title = graphData.y_label;
 
             Plotly.newPlot('linePlot', graphData.data, layout, configs);
         });

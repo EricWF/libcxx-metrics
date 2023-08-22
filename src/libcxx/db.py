@@ -12,31 +12,9 @@ DATABASE = pw.SqliteDatabase(None)
 DATABASE_PATH = Path(os.path.expanduser('~/.database/libcxx-info.db'))
 DATABASE_TEST_PATH = Path(os.path.expanduser('~/.database/test/libcxx-info.db'))
 import rich
-
-@dataclass
-class ClassRegistry:
-  mapping : dict[str, Any] = field(default_factory=dict)
-  _lock : RLock = field(default_factory=RLock)
-
-  def registered(self, obj_type):
-    with self._lock:
-      name = obj_type.__qualname__
-      assert name not in self.mapping
-      self.mapping[name] = obj_type
-    return obj_type
-
-  def __getitem__(self, key):
-    with self._lock:
-      if obj := self.mapping.get(key, None):
-        return obj
-      raise KeyError("Key %s not present" % key)
-
-  def __contains__(self, item):
-    with self._lock:
-      return item in self.mapping
+from libcxx.registry import ClassRegistry
 
 registry = ClassRegistry()
-
 class PydanticWrapper(pydantic.BaseModel):
   registry_key : str
   raw_object : str

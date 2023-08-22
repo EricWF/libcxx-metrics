@@ -5,7 +5,6 @@ from libcxx.types import *
 from libcxx.job import *
 import shutil
 import subprocess
-from libcxx.db import registry
 from types import SimpleNamespace as Namespace
 import asyncio
 import aiofiles
@@ -31,8 +30,6 @@ class CompilerMetricsList(JobOutput):
 
   def __len__(self):
     return len(self.runs)
-
-
 
   def extend(self, other):
     if not isinstance(other, CompilerMetricsList):
@@ -63,26 +60,23 @@ class CompilerMetricsList(JobOutput):
     })
 
 
-@registry.registered
 class CompilerMetricsJob(LibcxxJob):
   class Meta:
     repeatable : bool = True
     runs_per_repeat : int = 250
 
-  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     header: STLHeader
 
-  @registry.registered
+
   class Output(CompilerMetricsList):
     pass
 
-
-
   input_file : Path = Field(exclude=True, default_factory=Path)
   compiler: str = Field(exclude=True, default_factory=lambda: shutil.which('clang++'))
+
   @model_validator(mode='after')
   def validate_state(self):
     if hasattr(self.key, 'header'):
@@ -157,14 +151,12 @@ class CompilerMetricsJob(LibcxxJob):
     return output
 
 
-@registry.registered
+
 class CompilerMetricsTestSourceJob(CompilerMetricsJob):
-  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
     standard: Standard
     input: TestInputs
 
-  @registry.registered
   class Output(CompilerMetricsList):
     pass

@@ -1,20 +1,12 @@
 import contextlib
-import os
-import sys
-import re
+import os, sys, rich, json, re, shutil
 from pathlib import Path
 from pydantic import BaseModel, Field, RootModel
 from typing import Union, Optional, Any, Annotated, Literal
 from libcxx.config import LIBCXX_VERSIONS_ROOT, LIBCXX_INPUTS_ROOT, LLVM_PROJECT_ROOT
-import subprocess
-import shutil
 import copy
-import rich
-import json
 from enum import Enum
 import subprocess
-import functools
-import itertools
 
 CLANG_VERSIONED_RE = re.compile('clang-(?P<MAJOR>\d{1,2})(?P<MINOR>\.\d)(?P<PATCHLEVEL>\.\d)?')
 CLANG_TRUNK_RE = re.compile('clang-trunk-(?P<YEAR>\d\d\d\d)(?P<MONTH>\d\d)(?P<DAY>\d\d)')
@@ -922,5 +914,16 @@ class TestInputs(str, Enum):
   def __hash__(self):
     return hash(self.path().read_text())
 
+
+class TimeWindowSize(Enum):
+  DAYS = 'day',
+  WEEKS = 'week'
+  MONTHS = 'month'
+  YEARS = 'year'
+
+
+class TimeWindow(BaseModel):
+  size : TimeWindowSize = Field(default=TimeWindowSize.WEEKS)
+  weeks_ago: int
 
 

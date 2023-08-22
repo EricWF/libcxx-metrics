@@ -165,13 +165,11 @@ def post_process_git_commit_diff(result):
     return loc_info
 
 
-@registry.registered
 class LibcxxGitStatsJob(LibcxxJob):
-  @registry.registered
   class Key(JobKey):
     libcxx: LibcxxVersion
 
-  @registry.registered
+
   class Output(JobOutput):
     libcxx: LibcxxVersion
     commits: list[GitCommitInfo] = Field(default_factory=list)

@@ -14,12 +14,15 @@ from libcxx.jobs.git_stats import *
 from libcxx.db import init_db
 from jinja2 import Environment, FileSystemLoader
 
+from libcxx.registry import ClassRegistry
+
 STD_DIALECTS = Standard.between(Standard.Cpp14, Standard.Cpp23)
 
 TEMPLATE_DIR = Path(__file__).absolute().parent / 'templates'
 file_loader = FileSystemLoader(TEMPLATE_DIR)
 jinja_env = Environment(loader=file_loader)
 
+graph_register = ClassRegistry()
 
 def prepopulate():
   jobs = LibcxxJob.all_jobs()

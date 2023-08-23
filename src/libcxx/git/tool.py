@@ -237,8 +237,12 @@ def gather_data():
   frame.update({k: [] for k in DiffStats.model_fields.keys()})
 
   last = None
-  for data in CommitDB.select().where(CommitDB.date > datetime.datetime.now() - datetime.timedelta(days=2 * 365)).order_by(CommitDB.date).execute():
+  first = True
+  for data in CommitDB.select().order_by(CommitDB.date).execute():
     data = data.to_model_type()
+    if first:
+      first = False
+      rich.print(data)
     if last is None:
       last = data.model_copy()
       continue
@@ -252,10 +256,14 @@ def gather_data():
 
       last = data
       continue
-  frame['changed_r'] = pd.DataFrame(frame)['changed'].rolling(30, center=False).mean()
-  df = pd.DataFrame(frame)
+  df1 = pd.DataFrame(frame)
+  df1['changed_r'] = df1['changed'].rolling(30).mean()
+  df1['changed_src_or_include_r'] = df1['changed_src_or_include'].rolling(30).mean()
+  df1['changed_test_r'] = df1['changed_test'].rolling(30).mean()
+  df1['changed_test_r/changed_test_include_r'] = (df1['changed_test_r'] / df1['changed_src_or_include_r']).rolling(30).mean()
+  df1['changed_r'] = df1['changed'].rolling(100, center=False).mean()
   print('Frame is %s len' % len(frame['date']))
-  return df
+  return df1
 
 
 def update_dates():
@@ -271,7 +279,7 @@ def do_it():
   df = gather_data()
   fig = go.Figure()
   gd =GraphDefinition.model_validate({'title': 'test', 'x_label': 'date', 'y_label': 'changed',
-    'data': [go.Scatter(mode='lines', name='changed_r', x=df['date'], y=df['changed'])]})
+    'data': [go.Scatter(mode='lines', name='changed_r', x=df['date'], y=df['changed_test_r/changed_test_include_r'])]})
   glist.root['test'] = gd
   Path('/tmp/data2.json').write_text(glist.dump_plotly_json())
 

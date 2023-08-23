@@ -8,13 +8,14 @@ import pydantic
 from dataclasses import dataclass, field
 from typing import Any
 from threading import RLock
-DATABASE = pw.SqliteDatabase(None)
-DATABASE_PATH = Path(os.path.expanduser('~/.database/libcxx-info.db'))
-DATABASE_TEST_PATH = Path(os.path.expanduser('~/.database/test/libcxx-info.db'))
 import rich
 from libcxx.registry import ClassRegistry
 
 registry = ClassRegistry()
+
+db_types_registry = ClassRegistry()
+
+
 class PydanticWrapper(pydantic.BaseModel):
   registry_key : str
   raw_object : str
@@ -25,6 +26,8 @@ class PydanticWrapper(pydantic.BaseModel):
 
   @staticmethod
   def create(obj):
+    if obj.__class__.__qualname__ not in registry:
+      raise KeyError(f'Could not find {obj.__class__.__qualname__} in the registry')
     assert obj.__class__.__qualname__ in registry
     return PydanticWrapper.model_validate({
         'registry_key': obj.__class__.__qualname__,
@@ -44,7 +47,19 @@ class PydanticModelType(pw.TextField):
     return obj.object()
 
 
-class DBDataPoint(pw.Model):
+DATABASE = pw.SqliteDatabase(None)
+DATABASE_PATH = Path(os.path.expanduser('~/.database/libcxx-info.db'))
+DATABASE_TEST_PATH = Path(os.path.expanduser('~/.database/test/libcxx-info.db'))
+
+class LibcxxDBModel(pw.Model):
+  def __init_subclass__(cls, **kwargs):
+    super().__init_subclass__(**kwargs)
+    db_types_registry.add(cls)
+
+  class Meta:
+    database = DATABASE
+
+class DBDataPoint(LibcxxDBModel):
   key = PydanticModelType()
   value = PydanticModelType()
   job = pw.TextField()
@@ -53,14 +68,13 @@ class DBDataPoint(pw.Model):
     database = DATABASE
     primary_key = pw.CompositeKey('key', 'job')
 
-
 def init_db(path=DATABASE_PATH):
   if not DATABASE.is_closed():
     return
   DATABASE.init(path)
   if DATABASE.is_closed():
     DATABASE.connect()
-    DATABASE.create_tables([DBDataPoint])
+    DATABASE.create_tables([v for k,v in db_types_registry.items()])
 
 
 if __name__ == '__main__':

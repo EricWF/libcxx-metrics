@@ -632,7 +632,7 @@ JSON_P = Path('/tmp/progress-umap.json')
 STATE = TestState()
 if not JSON_P.is_file():
   jl = JobList()
-  lines = json.loads(Path('/tmp/items-list-umap.json').read_text())
+  lines = json.loads(Path('/tmp/header.json').read_text())
   for l in lines:
     jl.root.append(Job(input=l, done=False))
   jl.save(JSON_P)

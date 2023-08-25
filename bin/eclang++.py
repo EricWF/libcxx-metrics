@@ -3,15 +3,20 @@ import os
 import sys
 import json
 from pathlib import Path
+
 from dataclasses import dataclass, field
 import shlex
 
 BIN_PATH = Path(__file__).absolute().parent
 LIBCXX_VERSIONS_ROOT = BIN_PATH.parent / 'libcxx-versions'
 LIBCXX_METRICS_ROOT = BIN_PATH.parent
-
-sys.path.append(str(LIBCXX_METRICS_ROOT / 'src'))
+LIBCXX_PYTHON_ROOT = (BIN_PATH.parent / 'src').absolute()
+if LIBCXX_PYTHON_ROOT not in sys.path:
+  sys.path.append(LIBCXX_PYTHON_ROOT)
 from libcxx.types import *
+
+
+
 
 ARGS = sys.argv[1:]
 
@@ -58,9 +63,11 @@ def format_arg(a, name):
   return a.replace('{libcxx}', name)
 
 COMPILER = 'clang++'
-if 'CXX' in os.environ:
+if 'CXX' in os.environ and 'eclang' not in os.environ['CXX']:
   COMPILER = os.environ['CXX']
 COMPILER = shutil.which(COMPILER)
+assert Path(COMPILER).absolute() != Path(__file__).absolute()
+
 
 @dataclass
 class Runner:

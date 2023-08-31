@@ -156,6 +156,8 @@ class Standard(str, Enum):
 
 
 class LibcxxVersion(str, Enum):
+  installed = "installed",
+  installed_libstdcxx = "installed_libstdcxx",
   v4 = '4.0.1',
   v5 = '5.0.1'
   v6 = '6.0.1'
@@ -170,6 +172,7 @@ class LibcxxVersion(str, Enum):
   v15 = '15.0.0'
   v16 = '16.0.0'
   trunk = 'trunk'
+
 
   @staticmethod
   def between(v1, v2):
@@ -588,6 +591,8 @@ class LibcxxInfo(BaseModel):
   name : str
   path : Path
   identifier : Identifier
+  is_installed: Optional[bool] = Field(default=False)
+  install_flags: Optional[list[str]] = Field(default_factory=list)
   include_paths: list[Path] = Field(default_factory=list)
   library_paths: list[Path] = Field(default_factory=list)
   libraries: list[Path] = Field(default_factory=list)
@@ -645,6 +650,8 @@ class LibcxxInfo(BaseModel):
   def include_flags(self, include_flag='-cxx-isystem', root=None):
     if root is None:
       root = self.path
+    if self.is_installed and self.install_flags:
+      return self.install_flags
     result = ['-nostdinc++', '-Wno-unused-command-line-argument']
     for r in self.include_paths:
       prefix = '' if include_flag == '-I' else ''
@@ -654,6 +661,8 @@ class LibcxxInfo(BaseModel):
   def library_flags(self, root=None):
     if root is None:
       root = self.path
+    if self.is_installed and self.install_flags:
+      return self.install_flags
     result = ['-stdlib=libc++', '-Wno-unused-command-line-argument']
     for r in self.library_paths:
       result += ['-L', str(Path(root) / r), '-Wl,-rpath,' + str(Path(root) / r)]
@@ -682,14 +691,17 @@ class LibcxxInfo(BaseModel):
     p = Path(p).absolute()
     assert p.name == 'info.json'
     obj = json.loads(p.read_text())
-    obj['path'] = p.parent
+    if not obj.get('is_installed', False):
+      obj['path'] = p.parent
+    else:
+      assert Path(obj['path']).is_dir()
     model = LibcxxInfo.model_validate(obj)
     model.check()
     return model
 
   def check(self):
-    assert (self.path / 'info.json').is_file()
-    assert (self.path / self.include_paths[0]).is_dir()
+    assert (self.path / 'info.json').is_file() or self.is_installed
+    assert self.install_flags or (self.path / self.include_paths[0]).is_dir()
 
     #assert (self.path / 'bin').is_dir()
 

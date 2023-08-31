@@ -2,6 +2,7 @@
 #include <vector>
 #include <cassert>
 #include <array>
+#include <string>
 using namespace test_types;
 
 
@@ -13,8 +14,8 @@ inline void use(T&& v) {
   sink(&v);
 }
 
-template <class T>
-struct TestSuite {
+template <class T, class InitTagT = decltype(test_types::InitTag)>
+struct VectorTestSuite {
   std::vector<T> vec;
   std::vector<T> vec1;
   std::vector<T> const& const_vec;
@@ -90,7 +91,10 @@ struct TestSuite {
 
 
 
-  T* data_test() {
+  T* data_test(std::vector<T>& vec) {
+    return vec.data();
+  }
+  const T* data_test(std::vector<T> const& vec) {
     return vec.data();
   }
 
@@ -105,12 +109,16 @@ struct TestSuite {
   void test_emplace() {
     std::vector<T> v{{}};
     auto it = vec.begin();
-    vec.emplace(it, 42);
+    vec.emplace(it, T{});
+    const T t = T(InitTagT{});
+    vec.emplace(it, t);
+    vec.emplace(it, InitTagT{});
   }
 
 
   void test_emplace_back() {
-    vec.emplace_back(101);
+    vec.emplace_back(InitTagT{});
+    vec.emplace_back(T{});
   }
 
 
@@ -240,7 +248,7 @@ std::vector<T>  n_items_constructor(std::size_t N) {
 
 
   void operator_assign_ilist() {
-      vec = {InitTag, InitTag, InitTag};
+      vec = {InitTagT{}, InitTagT{}, InitTagT{}};
   }
 
 
@@ -286,4 +294,7 @@ std::vector<T>  n_items_constructor(std::size_t N) {
   }
 }; // end class
 
-template class TestSuite<Trivial>;
+template class VectorTestSuite<Trivial>;
+template class __attribute__((visibility("default"))) VectorTestSuite<NonTrivial>;
+template class __attribute__((visibility("default"))) VectorTestSuite<int, unsigned>;
+template class __attribute__((visibility("default"))) VectorTestSuite<std::string, const char*>;

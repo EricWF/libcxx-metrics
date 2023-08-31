@@ -1,0 +1,29 @@
+{
+  "name": "installed",
+  "identifier": {
+    "kind": "datestamp",
+    "year": 2099,
+    "month": 1,
+    "day": 1
+  },
+  "is_installed": true,
+  "path": "/usr/local/",
+  "include_paths": [
+    "include/c++/v1"
+  ],
+  "library_paths": [
+    "lib/"
+  ],
+  "libraries": [
+    "lib/libc++.so.1",
+    "lib/libc++.a",
+    "lib/libc++abi.so.1.0",
+    "lib/libc++experimental.a",
+    "lib/libc++abi.a",
+    "lib/libc++.so",
+    "lib/libc++abi.so",
+    "lib/libc++abi.so.1",
+    "lib/libc++.so.1.0"
+  ],
+  "supported_dialects": null
+}

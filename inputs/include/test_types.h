@@ -2,14 +2,27 @@
 #define LIBCXX_METRICS_INPUTS_INCLUDE_TEST_TYPES_H
 #include <iterator>
 
-#define DEF_EQ(T) \
-  friend bool operator==(T const&, T const&) noexcept; \
-  friend bool operator!=(T const&, T const&) noexcept; \
-  friend bool operator<(T const&, T const&) noexcept
+#define DECLARE_CMP(T) \
+  bool operator==(T const&, T const&) noexcept; \
+  bool operator!=(T const&, T const&) noexcept; \
+  bool operator<(T const&, T const&) noexcept; \
+  bool operator<=(T const&, T const&) noexcept; \
+  bool operator>(T const&, T const&) noexcept; \
+  bool operator>=(T const&, T const&) noexcept;
 
+
+
+#define DECLARE_INL_CMP(T) \
+  bool operator==(T const&) const noexcept; \
+  bool operator!=(T const&) const noexcept; \
+  bool operator<(T const&) const noexcept; \
+  bool operator<=(T const&) const noexcept; \
+  bool operator>(T const&) const noexcept; \
+  bool operator>=(T const&) const noexcept
 
 
 namespace test_types {
+
 
 constexpr struct InitTagT {} InitTag{};
 
@@ -23,11 +36,16 @@ struct NonTrivial {
   NonTrivial& operator=(NonTrivial&&) noexcept;
   ~NonTrivial();
 
-DEF_EQ(NonTrivial);
-
+  int id;
   int buff[10];
 };
 
+bool operator==(NonTrivial const&, NonTrivial const&) noexcept; 
+bool operator!=(NonTrivial const&, NonTrivial const&) noexcept; 
+bool operator<(NonTrivial const&, NonTrivial const&) noexcept; 
+bool operator<=(NonTrivial const&, NonTrivial const&) noexcept; 
+bool operator>(NonTrivial const&, NonTrivial const&) noexcept; 
+bool operator>=(NonTrivial const&, NonTrivial const&) noexcept;
 
 struct Trivial {
   Trivial() = default;
@@ -39,9 +57,18 @@ struct Trivial {
   Trivial& operator=(Trivial &&) = default;
   ~Trivial() = default;
 
-DEF_EQ(Trivial);
-  int buff[10];
+  int id = 0;
+  int buff[4] = {};
 };
+
+
+bool operator==(Trivial const&, Trivial const&) noexcept; 
+bool operator!=(Trivial const&, Trivial const&) noexcept; 
+bool operator<(Trivial const&, Trivial const&) noexcept; 
+bool operator<=(Trivial const&, Trivial const&) noexcept; 
+bool operator>(Trivial const&, Trivial const&) noexcept; 
+bool operator>=(Trivial const&, Trivial const&) noexcept;
+
 
 template <class Base = Trivial>
 struct MoveOnly : Base {
@@ -50,18 +77,26 @@ struct MoveOnly : Base {
   MoveOnly() = default;
   MoveOnly& operator=(MoveOnly const&) = delete;
   MoveOnly& operator=(MoveOnly&&) = default;
-  DEF_EQ(MoveOnly);
+  
+  bool operator==(MoveOnly const&) const noexcept; 
+  bool operator!=(MoveOnly const&) const noexcept; 
+  bool operator<(MoveOnly const&) const noexcept; 
+  bool operator<=(MoveOnly const&) const noexcept; 
+  bool operator>(MoveOnly const&) const noexcept; 
+  bool operator>=(MoveOnly const&) const noexcept;
 };
 
 
 template<typename T, class Base = Trivial>
-class ForwardIterator {
+class ForwardIterator : Base {
 public:
     using iterator_category = std::forward_iterator_tag;
     using value_type = T;
     using difference_type = std::ptrdiff_t;
     using pointer = value_type*;
     using reference = value_type&;
+
+    explicit ForwardIterator(T* pos);
 
     // Constructor
     ForwardIterator();
@@ -76,10 +111,8 @@ public:
     ForwardIterator& operator=(const ForwardIterator& iter);
 
     // Equality comparison operator
-    bool operator==(const ForwardIterator& iter) const;
-
-    // Inequality comparison operator
-    bool operator!=(const ForwardIterator& iter) const;
+    bool operator==(const ForwardIterator&) const;
+    bool operator!=(const ForwardIterator&) const;
 
     // Dereference operator
     T& operator*();
@@ -92,9 +125,12 @@ public:
 
     // Post-increment operator
     ForwardIterator operator++(int);
+
 private:
-  Trivial obj_;
+  T* pos_;
 };
+
+
 
 
 template<typename T, class Base = Trivial>
@@ -109,6 +145,8 @@ public:
     // Constructor
     InputIterator();
 
+    explicit InputIterator(T* pos);
+
     // Copy Constructor
     InputIterator(const InputIterator& iter);
 
@@ -119,10 +157,8 @@ public:
     InputIterator& operator=(const InputIterator& iter);
 
     // Equality comparison operator
-    bool operator==(const InputIterator& iter) const;
-
-    // Inequality comparison operator
-    bool operator!=(const InputIterator& iter) const;
+    bool operator==(InputIterator const&) const;
+    bool operator!=(InputIterator const&) const;
 
     // Dereference operator
     T& operator*();
@@ -136,12 +172,12 @@ public:
     // Post-increment operator
     InputIterator operator++(int);
 private:
-  Base obj_;
+  T* pos_;
 };
 
 
 template<typename T, class Base = Trivial>
-class BidirectionalIterator {
+class BidirectionalIterator : Base {
 public:
     using iterator_category = std::bidirectional_iterator_tag;
     using value_type = T;
@@ -151,6 +187,8 @@ public:
 
     // Constructor
     BidirectionalIterator();
+
+    explicit BidirectionalIterator(T* pos);
 
     // Copy Constructor
     BidirectionalIterator(const BidirectionalIterator& iter);
@@ -162,10 +200,8 @@ public:
     BidirectionalIterator& operator=(const BidirectionalIterator& iter);
 
     // Equality comparison operator
-    bool operator==(const BidirectionalIterator& iter) const;
-
-    // Inequality comparison operator
-    bool operator!=(const BidirectionalIterator& iter) const;
+    bool operator==(BidirectionalIterator const&) const;
+    bool operator!=(BidirectionalIterator const&) const;
 
     // Dereference operator
     T& operator*() const;
@@ -186,17 +222,21 @@ public:
     BidirectionalIterator operator--(int);
 
 private:
-    Base trivial;
+  T* pos_;
+    
+  friend class PrivateFriend;
 };
 
 template<typename T, class Base = Trivial>
-class RandomAccessIterator {
+class RandomAccessIterator : Base {
 public:
     using iterator_category = std::random_access_iterator_tag;
     using value_type = T;
     using difference_type = std::ptrdiff_t;
     using pointer = value_type*;
     using reference = value_type&;
+
+    explicit RandomAccessIterator(T* pos);
 
     // Constructor
     RandomAccessIterator();
@@ -211,10 +251,12 @@ public:
     RandomAccessIterator& operator=(const RandomAccessIterator& iter);
 
     // Equality comparison operator
-    bool operator==(const RandomAccessIterator& iter) const;
-
-    // Inequality comparison operator
-    bool operator!=(const RandomAccessIterator& iter) const;
+     bool operator==(RandomAccessIterator const&) const;
+     bool operator!=(RandomAccessIterator const&) const;
+     bool operator<(RandomAccessIterator const&) const;
+     bool operator<=(RandomAccessIterator const&) const;
+     bool operator>(RandomAccessIterator const&) const;
+     bool operator>=(RandomAccessIterator const&) const;
 
     // Dereference operator
     T& operator*() const;
@@ -240,18 +282,6 @@ public:
     // Subtraction operator
     RandomAccessIterator& operator-=(const int& sub);
 
-    // Less than comparison operator
-    bool operator<(const RandomAccessIterator& iter) const;
-
-    // Greater than comparison operator
-    bool operator>(const RandomAccessIterator& iter) const;
-
-    // Less than or equal to comparison operator
-    bool operator<=(const RandomAccessIterator& iter) const;
-
-    // Greater than or equal to comparison operator
-    bool operator>=(const RandomAccessIterator& iter) const;
-
     // Subscript operator
     T& operator[](const int& index) const;
 
@@ -264,7 +294,8 @@ public:
 
 
 private:
-    Base obj_;  // pointer to the current element
+  T* pos_;
+  friend class PrivateFriend;
 };
 
 
@@ -276,6 +307,8 @@ public:
     using difference_type = std::ptrdiff_t;
     using pointer = value_type*;
     using reference = value_type&;
+
+    explicit OutputIterator(T* pos);
 
     // Constructor
     OutputIterator();
@@ -332,9 +365,8 @@ public:
     bool operator>=(const OutputIterator& iter) const;
 
 private:
-    Base obj_;  // pointer to the current element
+    T* pos_; // pointer to current element
 };
-
 
 template <class Ret>
 struct Sink {
@@ -369,6 +401,7 @@ struct UniformRandomBitGenerator {
   static unsigned int max();
   static unsigned int min();
 };
+
 struct UniformRandomNumberGenerator{
   using result_type = unsigned int;
   unsigned int operator()() const;
